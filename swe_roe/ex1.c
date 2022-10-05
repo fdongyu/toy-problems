@@ -18,7 +18,8 @@ struct _n_User {
 	Vec       F, G, B;
 	PetscInt  xs, ys, xm, ym, xe, ye;
 	PetscInt  gxs, gxm, gys, gym, gxe, gye;
-    PetscBool debug;
+    PetscBool debug, save;
+    PetscInt tstep;
 };
 
 extern PetscErrorCode RHSFunction(TS, PetscReal, Vec, Vec, void *);
@@ -89,12 +90,17 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr)
 	PetscInt       gxs, gys, gxm, gym;
 	Vec            localX, localF, localG;
 	PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
+    PetscBool      save;
+    PetscViewer    viewer;
 
 
 	PetscFunctionBeginUser;
-	da = user->da;
-    Nx = user->Nx;
-    Ny = user->Ny;
+	da   = user->da;
+    Nx   = user->Nx;
+    Ny   = user->Ny;
+    save = user->save;
+
+    user->tstep = user->tstep + 1;
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
   	 *  corrector
@@ -169,6 +175,13 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr)
     DMRestoreLocalVector(da, &localF);
     DMRestoreLocalVector(da, &localG);
 
+    if (save) {
+        char fname[PETSC_MAX_PATH_LEN];
+        sprintf(fname, "outputs/ex1_%d.dat", user->tstep);
+        PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer);
+        VecView(X,viewer);
+        PetscViewerDestroy(&viewer);
+    }
 	PetscFunctionReturn(0);
 }
 
@@ -184,14 +197,14 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
     PetscScalar     fij[3], gij[3];
     PetscScalar     a;
     PetscBool       debug;
-    static PetscInt tstep = 0;
+    PetscInt        tstep;
 
     PetscFunctionBeginUser;
     da    = user->da;
     Nx    = user->Nx;
     Ny    = user->Ny;
     debug = user->debug;
-    tstep = tstep + 1;
+    tstep = user->tstep;
     self  = PETSC_COMM_SELF;
 
     DMGetLocalVector    (da, &localB);
@@ -440,6 +453,7 @@ int main(int argc, char **argv)
   	user->dof   = 3;  // h, uh, vh
   	user->comm  = PETSC_COMM_WORLD;
     user->debug = PETSC_FALSE;
+    user->debug = PETSC_FALSE;
 
   	MPI_Comm_size(user->comm,&user->size);
     MPI_Comm_rank(user->comm,&user->rank);
@@ -461,6 +475,7 @@ int main(int argc, char **argv)
 	    PetscCall(PetscOptionsReal("-dt","dt","",user->dt,&user->dt,NULL));
 	    PetscCall(PetscOptionsBool("-b","Add buildings","",add_building,&add_building,NULL));
         PetscCall(PetscOptionsBool("-debug","debug","",user->debug,&user->debug,NULL));
+        PetscCall(PetscOptionsBool("-save","save outputs","",user->save,&user->save,NULL));
   	}
   	ierr = PetscOptionsEnd();
   	PetscCall(ierr);
@@ -490,7 +505,7 @@ int main(int argc, char **argv)
   	 * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
     SetInitialCondition(X, user);
     {
-    	char fname[PETSC_MAX_PATH_LEN] = "./ex1_IC.dat";
+    	char fname[PETSC_MAX_PATH_LEN] = "outputs/ex1_IC.dat";
 	    PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer);
 	    VecView(X,viewer);
 	    PetscViewerDestroy(&viewer);

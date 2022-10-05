@@ -1,0 +1,6 @@
+
+.DS_Store
+swe_roe/ex1
+swe_roe/*.dSYM/*
+swe_roe/outputs/*
+swe_roe/*.asv
