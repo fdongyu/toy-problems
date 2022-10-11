@@ -16,10 +16,11 @@ struct _n_User {
 	PetscReal dt, hx, hy;
 	PetscInt  dof, rank, size;
 	Vec       F, G, B;
+    Vec       subdomain;
 	PetscInt  xs, ys, xm, ym, xe, ye;
 	PetscInt  gxs, gxm, gys, gym, gxe, gye;
     PetscBool debug, save;
-    PetscInt tstep;
+    PetscInt  tstep;
 };
 
 extern PetscErrorCode RHSFunction(TS, PetscReal, Vec, Vec, void *);
@@ -57,6 +58,21 @@ static PetscErrorCode SetInitialCondition(Vec X, User user)
     	                  	 	 user->rank, gxs, gys, gxm, gym);	
     }
 
+    user->xs = xs;
+    user->ys = ys;
+    user->xm = xm;
+    user->ym = ym;
+
+    user->gxs = gxs;
+    user->gys = gys;
+    user->gxm = gxm;
+    user->gym = gym;
+
+    user->xe  = user->xs  + user->xm  - 1;
+    user->ye  = user->ys  + user->ym  - 1;
+    user->gxe = user->gxs + user->gxm - 1;
+    user->gye = user->gys + user->gym - 1;
+
     // Set higher water in the SW  
     VecZeroEntries(X);
 	for (j = ys; j < ys + ym; j = j + 1) {
@@ -81,13 +97,48 @@ static PetscErrorCode SetInitialCondition(Vec X, User user)
 	PetscFunctionReturn(0);
 }
 
+PetscErrorCode Add_Buildings(User user)
+{
+    // Local variables
+    DM              da;
+    PetscInt        i, j, Nx, Ny, xmin, xmax, ymin, ymax;
+    PetscScalar  ***b_ptr;
+
+    PetscFunctionBeginUser;
+    da = user->da;
+    Nx = user->Nx;
+    Ny = user->Ny;
+
+    xmin = Nx/2 - 3;
+    xmax = Nx/2 + 3;
+    ymin = Ny/2 - 3;
+    ymax = Ny/2 + 3;
+
+    DMDAVecGetArrayDOF  (da, user->B, &b_ptr);
+    VecZeroEntries(user->B);
+    for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
+        for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
+            if (i > xmin && i < xmax && j > ymin && j < ymax) {
+                b_ptr[j][i][0] = 1.;
+            }
+        }
+    }
+
+    DMDAVecRestoreArrayDOF(da, user->B, &b_ptr);
+
+    PetscPrintf(user->comm,"Building size: xmin=%d,xmax=%d,ymin=%d,ymax=%d\n", \
+                            xmin,   xmax,   ymin,   ymax);
+    PetscPrintf(user->comm,"Buildings added sucessfully!\n");
+
+    PetscFunctionReturn(0);
+}
+
 PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr)
 {
 	// Local variables
 	User           user = (User)ptr;
 	DM             da;
-	PetscInt       i, j, k, xs, ys, xm, ym, Nx, Ny;
-	PetscInt       gxs, gys, gxm, gym;
+	PetscInt       i, j, k, Nx, Ny;
 	Vec            localX, localF, localG;
 	PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
     PetscBool      save;
@@ -129,35 +180,10 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr)
     DMDAVecGetArrayDOF(da,localG, &g_ptr );
     DMDAVecGetArrayDOF(da,F     , &f_ptr1);
 
-    //! Get local grid boundaries 
-    DMDAGetCorners     (da, &xs,  &ys,  0, &xm,  &ym,  0);
-    DMDAGetGhostCorners(da, &gxs, &gys, 0, &gxm, &gym, 0);
-    
-    user->xs = xs;
-    user->ys = ys;
-    user->xm = xm;
-    user->ym = ym;
-
-    /*
-    PetscPrintf(user->comm,"I am here: xs is %d, ys is %d, xm is %d, ym = %d \n",         \
-                            user->xs, user->ys, user->xm, user->ym);
-    */
-    
-
-    user->gxs = gxs;
-    user->gys = gys;
-    user->gxm = gxm;
-    user->gym = gym;
-
-    user->xe  = user->xs  + user->xm  - 1;
-    user->ye  = user->ys  + user->ym  - 1;
-    user->gxe = user->gxs + user->gxm - 1;
-    user->gye = user->gys + user->gym - 1;
-
     fluxes(x_ptr, f_ptr, g_ptr, user);
 
-    for (j = ys; j < ys + ym; j = j + 1) {
-    	for (i = xs; i < xs + xm; i = i + 1) {
+    for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
+    	for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
     		for (k = 0; k < user->dof; k = k + 1) {
     			f_ptr1[j][i][k] = -(f_ptr[j][i+1][k] - f_ptr[j][i][k]          \
                                   + g_ptr[j+1][i][k] - g_ptr[j][i][k]);
@@ -468,7 +494,7 @@ int main(int argc, char **argv)
   	PetscCall(ierr);
    	{
    		PetscCall(PetscOptionsInt("-Nx","Number of cells in X","",user->Nx,&user->Nx,NULL));
-   		PetscCall(PetscOptionsInt("-Ny","Number of cells in Y","",user->Nx,&user->Nx,NULL));
+   		PetscCall(PetscOptionsInt("-Ny","Number of cells in Y","",user->Ny,&user->Ny,NULL));
    		PetscCall(PetscOptionsInt("-Nt","Number of time steps","",user->Nt,&user->Nt,NULL));
 	    PetscCall(PetscOptionsReal("-hx","dx","",user->hx,&user->hx,NULL));
 	    PetscCall(PetscOptionsReal("-hy","dy","",user->hy,&user->hy,NULL));
@@ -490,11 +516,39 @@ int main(int argc, char **argv)
        user->dof, 1, NULL, NULL, &user->da);
   	DMSetFromOptions(user->da);
   	DMSetUp(user->da);
+    DMDASetUniformCoordinates(user->da, 0.0, user->Nx*user->hx,                \
+                                        0.0, user->Ny*user->hy, 0.0, 0.0);
+
+    /*
+    {
+        PetscInt dimEmbed, i;
+        PetscInt nCoords;
+        PetscScalar *coords;
+        Vec coordinates;
+
+        PetscCall(DMGetCoordinatesLocal(user->da,&coordinates));
+        PetscCall(DMGetCoordinateDim(user->da,&dimEmbed));
+        PetscCall(VecGetLocalSize(coordinates,&nCoords));
+        PetscCall(VecGetArray(coordinates,&coords));
+
+        PetscPrintf(PETSC_COMM_SELF,"nCoords = %d, dimEmbed = %d\n",nCoords,dimEmbed);
+        for (i = 0; i < nCoords; i += dimEmbed) {
+          PetscInt j;
+          PetscScalar *coord = &coords[i];
+          PetscPrintf(PETSC_COMM_SELF,"i = %d: x = %f, y = %f\n",i,coord[0],coord[1]);
+        }
+        PetscCall(VecRestoreArray(coordinates,&coords));
+
+        PetscInt numCells, numCellsX;
+        DMDAGetNumCells(user->da, &numCellsX, NULL, NULL, &numCells);
+        PetscPrintf(PETSC_COMM_SELF,"numCells = %d, numCellsX = %d\n",numCells,numCellsX);
+    }
+    */
 
   	/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
   	 *  Extract global vectors from DMDA
   	 * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  	DMCreateGlobalVector(user->da, &X);
+  	DMCreateGlobalVector(user->da, &X); // size = dof * number of cells
 	VecDuplicate(X, &user->F);
 	VecDuplicate(X, &user->G);
     VecDuplicate(X, &user->B);
@@ -510,6 +564,18 @@ int main(int argc, char **argv)
 	    VecView(X,viewer);
 	    PetscViewerDestroy(&viewer);
 	}
+
+    /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
+     *  Add buildings
+     * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+    if (add_building) {
+        Add_Buildings(user);
+    }
+
+    /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
+     *  Set sub domains
+     * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+    //VecCreateMPI(user->comm, PetscInt n, PETSC_DETERMINE, user->subdomain);
 
 	/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
   	 *  Create timestepping solver context
