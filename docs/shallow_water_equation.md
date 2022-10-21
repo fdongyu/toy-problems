@@ -84,8 +84,8 @@ The flux normal flux across the face, $\mathbf{F.n}$, is given by
   =
   \begin{bmatrix}
   hu_\perp  \\[.5em]
-  huu_\perp + \frac{1}{2}gh^2 \cos\phi \\[.5em]
-  hvu_\perp + \frac{1}{2}gh^2 \sin\phi 
+  huu_\perp + \frac{1}{2}gh^2 \cos\phi + \frac{1}{24}g\left(\Delta h\right)^2\cos\phi\\[.5em]
+  hvu_\perp + \frac{1}{2}gh^2 \sin\phi + \frac{1}{24}g\left(\Delta h\right)^2\sin\phi
   \end{bmatrix}
 \end{align}
 
@@ -108,7 +108,7 @@ where
   =
   \begin{bmatrix}
   1 & 0 & 1  \\[.5em]
-  \hat{u} - \hat{a}\cos\phi & -\sin\phi & \hat{u} + \hat{c}\cos\phi \\[.5em]
+  \hat{u} - \hat{a}\cos\phi & -\sin\phi & \hat{u} + \hat{c}\cos\phi  \\[.5em]
   \hat{v} - \hat{a}\sin\phi & \cos\phi & \hat{v} + \hat{c}\sin\phi
   \end{bmatrix}
 \end{align}
