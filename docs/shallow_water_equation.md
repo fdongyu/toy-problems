@@ -199,6 +199,10 @@ The bed is assumed flat and Manning's coefficient is assumed to be zero, so $\ma
 
 
 ## References
+Bradford, S. F., & Sanders, B. F. (2002). Finite-volume model for shallow-water
+flooding of arbitrary topography. Journal of hydraulic engineering, 128(3), 289-298.
+[https://ascelibrary.org/doi/10.1061/%28ASCE%290733-9429%282002%29128%3A3%28289%29](https://ascelibrary.org/doi/10.1061/%28ASCE%290733-9429%282002%29128%3A3%28289%29)
+
 Kim, J., Warnock, A., Ivanov, V. Y., & Katopodes, N. D. (2012).
 Coupled modeling of hydrologic and hydrodynamic processes including
 overland and channel flow. Advances in water resources, 37, 104-126.
