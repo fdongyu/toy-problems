@@ -73,9 +73,7 @@ $n$ is the Manning's coefficient.
 \int_\Omega \mathbf{S} d\Omega
 \end{eqnarray}
 
-where
-
-$\mathbf{F}$ is the flux vector and
+where $\mathbf{F}$ is the flux vector and
 $\mathbf{n}$ is the outward pointing unit vector to the boundary $\partial\Omega$. 
 The flux normal flux across the face, $\mathbf{F.n}$, is given by
 
