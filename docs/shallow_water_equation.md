@@ -196,3 +196,12 @@ Comparing equation \eqref{eqn:swe} and \eqref{eqn:petsc_ts} provides
 ## `swe_roe/ex1.c`
 
 The bed is assumed flat and Manning's coefficient is assumed to be zero, so $\mathbf{S}$ is not included.
+
+
+## References
+Kim, J., Warnock, A., Ivanov, V. Y., & Katopodes, N. D. (2012).
+Coupled modeling of hydrologic and hydrodynamic processes including
+overland and channel flow. Advances in water resources, 37, 104-126.
+[https://www.sciencedirect.com/science/article/pii/S0309170811002211?via%3Dihub](https://www.sciencedirect.com/science/article/pii/S0309170811002211?via%3Dihub)
+
+
