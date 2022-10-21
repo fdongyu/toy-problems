@@ -108,8 +108,8 @@ where
   =
   \begin{bmatrix}
   1 & 0 & 1  \\[.5em]
-  \hat{u} - \hat{c}\cos\phi & -\sin\phi & \hat{u} + \hat{c}\cos\phi \\[.5em]
-  \hat{v} - \hat{c}\sin\phi & \cos\phi & \hat{v} + \hat{c}\sin\phi
+  \hat{u} - \hat{a}\cos\phi & -\sin\phi & \hat{u} + \hat{c}\cos\phi \\[.5em]
+  \hat{v} - \hat{a}\sin\phi & \cos\phi & \hat{v} + \hat{c}\sin\phi
   \end{bmatrix}
 \end{align}
 
@@ -146,8 +146,8 @@ $\hat{\lambda}_3 (= \hat{u}_\perp + \hat{a})$
 are adjusted since Roe's method does not provide correct flux for critical flow.
 
 \begin{eqnarray}
-  |\hat{\lambda}|_1 &=& \frac{\hat{\lambda}^2_1}{\Delta \lambda} + \frac{\Delta \lambda}{4} \mbox{\hspace{0.5cm}if $-\Delta \lambda/2 < \hat{\lambda}_1 < \Delta \lambda/2$} \\
-  |\hat{\lambda}|_3 &=& \frac{\hat{\lambda}^2_2}{\Delta \lambda} + \frac{\Delta \lambda}{4} \mbox{\hspace{0.5cm}if $-\Delta \lambda/2 < \hat{\lambda}_3 < \Delta \lambda/2$}
+  |\hat{\lambda}|_1 &=& \frac{\hat{\lambda}^2_1}{\Delta \lambda} + \frac{\Delta \lambda}{4} \mbox{$~$ if $~ -\Delta \lambda/2 < \hat{\lambda}_1 < \Delta \lambda/2$} \\
+  |\hat{\lambda}|_3 &=& \frac{\hat{\lambda}^2_2}{\Delta \lambda} + \frac{\Delta \lambda}{4} \mbox{$~$ if $~ -\Delta \lambda/2 < \hat{\lambda}_3 < \Delta \lambda/2$}
 \end{eqnarray}
  
 ### Source term
@@ -161,10 +161,15 @@ The source term for the x-momentum equation
 
 #### Bed slope elevation term
 
-\begin{eqnarray}
-\int_{d\Omega}  -gh\frac{\partial z}{\partial x} d\Omega &\approx& -gh\overline{\frac{\partial z}{\partial x}} \Omega \nonumber \\[0.6em]
-&=& \frac{(y_2 - y_0)(z_1 - z_0) - (y_1 - y_0)(z_2 - z_0)}{(y_2 - y_0)(x_1 - x_0) - (y_1 - y_0)(x_2 - x_0)} \Omega
-\end{eqnarray}
+\begin{equation}
+\int_{d\Omega}  -gh\frac{\partial z}{\partial x} d\Omega \approx -gh\overline{\frac{\partial z}{\partial x}} \Omega
+\end{equation}
+
+For a triangular grid cell
+
+\begin{equation}
+\overline{\frac{\partial z}{\partial x}}  = \frac{(y_2 - y_0)(z_1 - z_0) - (y_1 - y_0)(z_2 - z_0)}{(y_2 - y_0)(x_1 - x_0) - (y_1 - y_0)(x_2 - x_0)}
+\end{equation}
 
 #### Roughness term
 
@@ -174,21 +179,20 @@ The source term for the x-momentum equation
 
 ## PETSc TS implementation
 
-The PETSc TS notation\footnote{https://petsc.org/release/docs/manual/ts/} for solving time-dependent is given as:
+The [PETSc TS notation](https://petsc.org/release/docs/manual/ts/) for solving time-dependent is given as:
 
 \begin{equation}
 \label{eqn:petsc_ts}
 \mathtt{ F(t,u,{u}_t)=G(t,u)}
 \end{equation}
 
-By comparing \ref{eqn:swe} and \ref{eqn:petsc_ts},
+Comparing equation \eqref{eqn:swe} and \eqref{eqn:petsc_ts} provides
 
 \begin{eqnarray}
-{\mathtt{IFunction: \hspace{0.5cm} F(t,u,{u}_t)}  } & \equiv & \frac{\partial \mathbf{U}}{\partial t} \\
-{\mathtt{RHSFunction: \hspace{1cm} G(t,u)}  } & \equiv & -\frac{\partial\mathbf{E}}{\partial x} - \frac{\partial\mathbf{G}}{\partial x} - \mathbf{S}
+{\mathtt{IFunction:  F(t,u,{u}_t)}  } & \equiv & \frac{\partial \mathbf{U}}{\partial t} \\
+{\mathtt{RHSFunction:  G(t,u)}  } & \equiv & -\frac{\partial\mathbf{E}}{\partial x} - \frac{\partial\mathbf{G}}{\partial x} - \mathbf{S}
 \end{eqnarray}
 
 ## `swe_roe/ex1.c`
 
 The bed is assumed flat and Manning's coefficient is assumed to be zero, so $\mathbf{S}$ is not included.
-
