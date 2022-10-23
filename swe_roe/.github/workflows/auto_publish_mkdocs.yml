@@ -1,4 +1,4 @@
-name: build
+name: auto_publish_mkdocs
 on:
   push:
     branches:
