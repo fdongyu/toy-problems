@@ -106,8 +106,8 @@ where
   =
   \begin{bmatrix}
   1 & 0 & 1  \\[.5em]
-  \hat{u} - \hat{a}\cos\phi & -\sin\phi & \hat{u} + \hat{c}\cos\phi  \\[.5em]
-  \hat{v} - \hat{a}\sin\phi & \cos\phi & \hat{v} + \hat{c}\sin\phi
+  \hat{u} - \hat{a}\cos\phi & -\sin\phi & \hat{u} + \hat{a}\cos\phi  \\[.5em]
+  \hat{v} - \hat{a}\sin\phi &  \cos\phi & \hat{v} + \hat{a}\sin\phi
   \end{bmatrix}
 \end{align}
 
