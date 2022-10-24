@@ -14,6 +14,7 @@ struct _n_User {
 	DM        da;
 	PetscInt  Nt, Nx, Ny;
 	PetscReal dt, hx, hy;
+    PetscReal hu, hd;
 	PetscInt  dof, rank, size;
 	Vec       F, G, B;
     Vec       subdomain;
@@ -77,11 +78,11 @@ static PetscErrorCode SetInitialCondition(Vec X, User user)
     VecZeroEntries(X);
 	for (j = ys; j < ys + ym; j = j + 1) {
 		for (i = xs; i < xs + xm; i = i + 1) {
-			if (j >= Ny - 10 && i < 10) {
-				x_ptr[j][i][0] = 1.0;
+			if (j < 95) {
+				x_ptr[j][i][0] = user->hu;
 			}
 			else {
-				x_ptr[j][i][0] = 0.1;
+				x_ptr[j][i][0] = user->hd;
 			}
 		}
 	}
@@ -118,7 +119,10 @@ PetscErrorCode Add_Buildings(User user)
     VecZeroEntries(user->B);
     for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
         for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
-            if (i > xmin && i < xmax && j > ymin && j < ymax) {
+            if (i < 30 && j >= 95 && j < 105) {
+                b_ptr[j][i][0] = 1.;
+            }
+            else if (i >= 105 && j >= 95 && j < 105) {
                 b_ptr[j][i][0] = 1.;
             }
         }
@@ -474,8 +478,8 @@ int main(int argc, char **argv)
 	PetscCall(PetscInitialize(&argc, &argv, (char*) 0, help));
 
 	PetscCall(PetscNew(&user));
-  	user->dt    = 0.1;
-  	user->Nt    = 50;
+  	user->dt    = 0.04;
+  	user->Nt    = 180;
   	user->dof   = 3;  // h, uh, vh
   	user->comm  = PETSC_COMM_WORLD;
     user->debug = PETSC_FALSE;
@@ -485,10 +489,12 @@ int main(int argc, char **argv)
     MPI_Comm_rank(user->comm,&user->rank);
     PetscPrintf(user->comm,"Running on %d processors! \n",user->size);
     /*Default number of cells (box), cellsize in x-direction, and y-direction */
-    user->Nx = 51;
-    user->Ny = 51;
+    user->Nx = 200;
+    user->Ny = 200;
   	user->hx = 1.0;
   	user->hy = 1.0;
+    user->hu = 10.0; // water depth for the upstream of dam   [m]
+    user->hd = 5.0;  // water depth for the downstream of dam [m]
 
   	ierr = PetscOptionsBegin(user->comm,NULL,"2D Mesh Options","");
   	PetscCall(ierr);
@@ -498,6 +504,8 @@ int main(int argc, char **argv)
    		PetscCall(PetscOptionsInt("-Nt","Number of time steps","",user->Nt,&user->Nt,NULL));
 	    PetscCall(PetscOptionsReal("-hx","dx","",user->hx,&user->hx,NULL));
 	    PetscCall(PetscOptionsReal("-hy","dy","",user->hy,&user->hy,NULL));
+        PetscCall(PetscOptionsReal("-hu","hu","",user->hu,&user->hu,NULL));
+        PetscCall(PetscOptionsReal("-hd","hd","",user->hd,&user->hd,NULL));
 	    PetscCall(PetscOptionsReal("-dt","dt","",user->dt,&user->dt,NULL));
 	    PetscCall(PetscOptionsBool("-b","Add buildings","",add_building,&add_building,NULL));
         PetscCall(PetscOptionsBool("-debug","debug","",user->debug,&user->debug,NULL));
