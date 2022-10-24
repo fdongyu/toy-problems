@@ -74,7 +74,7 @@ static PetscErrorCode SetInitialCondition(Vec X, User user)
     user->gxe = user->gxs + user->gxm - 1;
     user->gye = user->gys + user->gym - 1;
 
-    // Set higher water in the SW  
+    // Set higher water on the left of the dam
     VecZeroEntries(X);
 	for (j = ys; j < ys + ym; j = j + 1) {
 		for (i = xs; i < xs + xm; i = i + 1) {
@@ -117,6 +117,25 @@ PetscErrorCode Add_Buildings(User user)
 
     DMDAVecGetArrayDOF  (da, user->B, &b_ptr);
     VecZeroEntries(user->B);
+    /*
+
+    x represents the reflecting wall,
+    | represents the dam that will be broken suddenly.
+    hu is the upsatream water dpeth, and hd is the downstream water depth.
+
+    x x x x x x x x x x x
+    x         x         x
+    x         x         x
+    x         |         x
+    x         |         x
+    x    hu   |    hd   x
+    x         x         x
+    x         x         x
+    x         x         x
+    x         x         x
+    x x x x x x x x x x x
+    
+    */
     for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
         for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
             if (i < 30 && j >= 95 && j < 105) {
