@@ -1,31 +1,46 @@
 clear;close all;clc
 
+% User need to provide petsc directory
 addpath('/Users/xudo627/developments/petsc/share/petsc/matlab/');
 
 Nt  = length(dir('outputs/ex1*.dat')) - 1;
 dof = 3;
-Nx  = 200;
-Ny  = 200;
-dt  = 0.04;
 
-x = 1 : 200;
-y = 1 : 200;
+file_IC = dir('outputs/ex1_*_IC.dat');
+if length(file_IC) > 1
+    error('Check your outputs, there may be two simulations!');
+end
+IC  = PetscBinaryRead(fullfile(file_IC(1).folder,file_IC(1).name));
+% Get Nx, Ny, and dt from filename
+strs = strsplit(file_IC(1).name,'_');
+for i = 1 : length(strs)
+    if strcmp(strs{i},'Nx')
+        Nx = str2num(strs{i+1});
+    elseif strcmp(strs{i},'Ny')
+        Ny = str2num(strs{i+1});
+    elseif strcmp(strs{i},'dt')
+        dt = str2num(strs{i+1});
+    end
+end
+x = 1 : Nx;
+y = 1 : Ny;
 [x,y] = meshgrid(x,y);
 
-IC  = PetscBinaryRead('outputs/ex1_IC.dat');
+% Show Initial Condition
+figure;
 IC  = reshape(IC,  [dof, length(IC)/dof]);
 h0  = IC(1,:);
 h0  = reshape(h0,[Nx Ny]);
-
-figure;
 imagesc(h0); colorbar; caxis([0 1]); colormap(jet);
-title('t = 0s','FontSize',15);
+title('Initial Condition','FontSize',15,'FontWeight','bold');
 
+% Animation of DAM break
 imAlpha = ones(size(h0));
 imAlpha(1:30,96:105) = 0;
 imAlpha(106:200,96:105) = 0;
 for i = 1 : Nt
-    data  = PetscBinaryRead(['outputs/ex1_' num2str(i) '.dat']);
+    file  = dir(['outputs/ex1_*_' num2str(i) '.dat']);
+    data  = PetscBinaryRead(fullfile(file(1).folder,file(1).name));
     data  = reshape(data,  [dof, length(data)/dof]);
     h     = data(1,:); h     = reshape(h,[Nx Ny]);
     u     = data(2,:); u     = reshape(u,[Nx Ny]);
@@ -35,49 +50,25 @@ for i = 1 : Nt
     title(['t = ' num2str(i*dt) 's'],'FontSize',15);
 end
 
-u(1:31,95:106) = 0;
+h(1:31,95:106)    = NaN;
+h(105:200,95:106) = NaN;
+u(1:31,95:106)    = 0;
 u(105:200,95:106) = 0;
-
-v(1:31,95:106) = 0;
+v(1:31,95:106)    = 0;
 v(105:200,95:106) = 0;
-figure;quiver(x,y,flipud(v),flipud(u)); hold on;
+
+% Water depth and velocity at last time step
+figure; set(gcf,'Position',[10 10 1200 500]);
+subplot(1,2,1);
+surf(x,y,flipud(h),'LineStyle','none'); hold on;
+colormap(jet);
+contour3(x,y,flipud(h),20, 'k-', 'LineWidth',1);  
+view(30,45);
+
+subplot(1,2,2);
+quiver(x,y,flipud(v),flipud(u)); hold on;
 fill([95 95 106 106 95],[1 96 96 1 1]        ,[0.5 0.5 0.5],'EdgeColor','none');
 fill([95 95 106 106 95],[170 200 200 170 170],[0.5 0.5 0.5],'EdgeColor','none');
 xlim([1 200]);ylim([1 200]);
-
-figure;
-contour(x,y,flipud(sqrt(u.^2 + v.^2)));
+contour(x,y,flipud(h),20,'LineWidth',1);
 colorbar; colormap(jet);
-
-
-% h   = NaN(length(h0),Nt+1);
-% h(:,1) = h0;
-
-% for i = 1 : Nt - 1
-%     filename = ['./Output/solution_' num2str(i) '.dat'];
-%     X = PetscBinaryRead(filename);
-%     X = reshape(X,   [3, length(X)/3]);
-%     h(:,i+1) = X(1,:);
-% end
-% 
-% coord = PetscBinaryRead('./Output/coord.dat');
-% tri   = PetscBinaryRead('./Output/triangle.dat');
-% coord = reshape(coord,[2, length(coord)/2]);
-% x = coord(1,:); y = coord(2,:);
-% x = x'; y = y';
-% tri = reshape(tri, [3, length(tri)/3]) + 1; % node ID offset = 1
-% tri = tri';
-% 
-% fig = figure(1);
-% 
-% for i = 1 : Nt 
-%     filltri(h(:,i),tri,x,y,fig);
-%     %colormap(jet);
-%     caxis([0.1 .5]);
-% end
-% %filltri(h,tri,x,y);
-% 
-% %Check the mass balance
-% 
-% % fprintf(['mass at IC is: ' num2str(sum(h0)) '\n']);
-% % fprintf(['mass at end is: ' num2str(sum(h)) '\n']);

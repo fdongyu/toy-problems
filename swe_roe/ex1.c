@@ -6,6 +6,7 @@ static char help[] = "Dam Break 2D Shallow Water Equation Finite Volume Example.
 #include <petscvec.h>
 #include <petscmat.h>
 #include <math.h>
+#include <assert.h>
 
 typedef struct _n_User *User;
 
@@ -15,6 +16,7 @@ struct _n_User {
 	PetscInt  Nt, Nx, Ny;
 	PetscReal dt, hx, hy;
     PetscReal hu, hd;
+    PetscReal tiny_h;
 	PetscInt  dof, rank, size;
 	Vec       F, G, B;
     Vec       subdomain;
@@ -102,18 +104,21 @@ PetscErrorCode Add_Buildings(User user)
 {
     // Local variables
     DM              da;
-    PetscInt        i, j, Nx, Ny, xmin, xmax, ymin, ymax;
+    PetscInt        i, j, Nx, Ny, bu, bd, bl, br;
+    PetscReal       hx, hy;
     PetscScalar  ***b_ptr;
 
     PetscFunctionBeginUser;
     da = user->da;
     Nx = user->Nx;
     Ny = user->Ny;
+    hx = user->hx;
+    hy = user->hy;
 
-    xmin = Nx/2 - 3;
-    xmax = Nx/2 + 3;
-    ymin = Ny/2 - 3;
-    ymax = Ny/2 + 3;
+    bu = 30/hx;
+    bd = 105/hx;
+    bl = 95/hy;
+    br = 105/hy;
 
     DMDAVecGetArrayDOF  (da, user->B, &b_ptr);
     VecZeroEntries(user->B);
@@ -134,14 +139,14 @@ PetscErrorCode Add_Buildings(User user)
     x         x         x
     x         x         x
     x x x x x x x x x x x
-    
+
     */
     for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
         for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
-            if (i < 30 && j >= 95 && j < 105) {
+            if (i < bu && j >= bl && j < br) {
                 b_ptr[j][i][0] = 1.;
             }
-            else if (i >= 105 && j >= 95 && j < 105) {
+            else if (i >= bd && j >= bl && j < br) {
                 b_ptr[j][i][0] = 1.;
             }
         }
@@ -149,8 +154,8 @@ PetscErrorCode Add_Buildings(User user)
 
     DMDAVecRestoreArrayDOF(da, user->B, &b_ptr);
 
-    PetscPrintf(user->comm,"Building size: xmin=%d,xmax=%d,ymin=%d,ymax=%d\n", \
-                            xmin,   xmax,   ymin,   ymax);
+    PetscPrintf(user->comm,"Building size: bu=%d,bd=%d,bl=%d,br=%d\n", \
+                            bu,   bd,   bl,   br);
     PetscPrintf(user->comm,"Buildings added sucessfully!\n");
 
     PetscFunctionReturn(0);
@@ -226,7 +231,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr)
 
     if (save) {
         char fname[PETSC_MAX_PATH_LEN];
-        sprintf(fname, "outputs/ex1_%d.dat", user->tstep);
+        sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat",                 \
+                       user->Nx,user->Ny,user->dt,user->tstep);
         PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer);
         VecView(X,viewer);
         PetscViewerDestroy(&viewer);
@@ -275,32 +281,61 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
             if (i == 0) { 
             // Enforce wall boundary on left side of box (west)
                 hr = x_ptr[j][i][0];
-                ur = x_ptr[j][i][1]/hr;
-                vr = x_ptr[j][i][2]/hr;
-                solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
-                amax = fmax(a,amax);
+                if (hr < user->tiny_h) {
+                    ur = 0.;
+                    vr = 0.;
+                    fij[0] = 0.; fij[1] = 0.; fij[2] = 0.;
+                }
+                else {
+                    ur = x_ptr[j][i][1]/hr;
+                    vr = x_ptr[j][i][2]/hr;
+                    solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
+                    amax = fmax(a,amax);
+                }
+                
             }
             else if (i == Nx) { 
             // Enforce wall boundary on right side of box (west)
                 hl = x_ptr[j][i-1][0];
-                ul = x_ptr[j][i-1][1]/hl;
-                vl = x_ptr[j][i-1][2]/hl;
-                solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
-                amax = fmax(a,amax);
+                if (hl < user->tiny_h) {
+                    ul = 0.;
+                    vl = 0.;
+                    fij[0] = 0.; fij[1] = 0.; fij[2] = 0.;
+                }
+                else {
+                    ul = x_ptr[j][i-1][1]/hl;
+                    vl = x_ptr[j][i-1][2]/hl;
+                    solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
+                    amax = fmax(a,amax);
+                }
             }
             else if (b_ptr[j][i][0] == 1. && b_ptr[j][i-1][0] == 0.) {
                 hl = x_ptr[j][i-1][0];
-                ul = x_ptr[j][i-1][1]/hl;
-                vl = x_ptr[j][i-1][2]/hl;
-                solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
-                amax = fmax(a,amax);
+                if (hl < user->tiny_h) {
+                    ul = 0.;
+                    vl = 0.;
+                    fij[0] = 0.; fij[1] = 0.; fij[2] = 0.;
+                }
+                else {
+                    ul = x_ptr[j][i-1][1]/hl;
+                    vl = x_ptr[j][i-1][2]/hl;
+                    solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
+                    amax = fmax(a,amax);
+                }
             }
             else if (b_ptr[j][i][0] == 0. && b_ptr[j][i-1][0] == 1.) {
                 hr = x_ptr[j][i][0];
-                ur = x_ptr[j][i][1]/hr;
-                vr = x_ptr[j][i][2]/hr;
-                solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
-                amax = fmax(a,amax);
+                if (hr < user->tiny_h) {
+                    ur = 0.;
+                    vr = 0.;
+                    fij[0] = 0.; fij[1] = 0.; fij[2] = 0.;
+                }
+                else {
+                    ur = x_ptr[j][i][1]/hr;
+                    vr = x_ptr[j][i][2]/hr;
+                    solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
+                    amax = fmax(a,amax);
+                }    
             }
             else if (b_ptr[j][i][0] == 1. && b_ptr[j][i-1][0] == 1.) {
                 fij[0] = 0.;
@@ -310,12 +345,33 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
             else {
                 hl = x_ptr[j][i-1][0];
                 hr = x_ptr[j][i][0];
-                ul = x_ptr[j][i-1][1]/hl;
-                ur = x_ptr[j][i][1]/hr;
-                vl = x_ptr[j][i-1][2]/hl;
-                vr = x_ptr[j][i][2]/hr;
-                solver(hl, hr, ul, ur, vl, vr, sn, cn, fij, &a);
-                amax = fmax(a,amax);
+
+                if (hl < user->tiny_h) {
+                    ul = 0.;
+                    vl = 0.;
+                }
+                else {
+                    ul = x_ptr[j][i-1][1]/hl;
+                    vl = x_ptr[j][i-1][2]/hl;
+                }
+
+                if (hr < user->tiny_h) {
+                    ur = 0.;
+                    vr = 0.;
+                }
+                else {
+                    ur = x_ptr[j][i][1]/hr;
+                    vr = x_ptr[j][i][2]/hr;
+                }
+
+                if (hl < user->tiny_h && hr < user->tiny_h) {
+                    fij[0] = 0.; fij[1] = 0.; fij[2] = 0.;
+                }
+                else {
+                    solver(hl, hr, ul, ur, vl, vr, sn, cn, fij, &a);
+                    amax = fmax(a,amax);
+                }
+                
             }
             f_ptr[j][i][0] = fij[0];
             f_ptr[j][i][1] = fij[1];
@@ -329,31 +385,60 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
             cn = 0.0;
             if (j == 0) {
                 hr = x_ptr[j][i][0];
-                ur = x_ptr[j][i][1]/hr;
-                vr = x_ptr[j][i][2]/hr;
-                solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
-                amax = fmax(a, amax);
+                if (hr < user->tiny_h) {
+                    ur = 0.;
+                    vr = 0.;
+                    gij[0] = 0.; gij[1] = 0.; gij[2] = 0.;
+                }
+                else {
+                    ur = x_ptr[j][i][1]/hr;
+                    vr = x_ptr[j][i][2]/hr;
+                    solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
+                    amax = fmax(a, amax);
+                }
+                
             }
             else if (j == Ny) {
                 hl = x_ptr[j-1][i][0];
-                ul = x_ptr[j-1][i][1]/hl;
-                vl = x_ptr[j-1][i][2]/hl;
-                solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
-                amax = fmax(a, amax);
+                if (hl < user->tiny_h) {
+                    ul = 0.;
+                    vl = 0.;
+                    gij[0] = 0.; gij[1] = 0.; gij[2] = 0.;
+                }
+                else {
+                    ul = x_ptr[j-1][i][1]/hl;
+                    vl = x_ptr[j-1][i][2]/hl;
+                    solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
+                    amax = fmax(a, amax);
+                }  
             }
             else if (b_ptr[j][i][0] == 1. && b_ptr[j-1][i][0] == 0.) {
                 hl = x_ptr[j-1][i][0];
-                ul = x_ptr[j-1][i][1]/hl;
-                vl = x_ptr[j-1][i][2]/hl;
-                solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
-                amax = fmax(a, amax);
+                if (hl < user->tiny_h) {
+                    ul = 0.;
+                    vl = 0.;
+                    gij[0] = 0.; gij[1] = 0.; gij[2] = 0.;
+                }
+                else {
+                    ul = x_ptr[j-1][i][1]/hl;
+                    vl = x_ptr[j-1][i][2]/hl;
+                    solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
+                    amax = fmax(a, amax);
+                }
             }
             else if (b_ptr[j][i][0] == 0. && b_ptr[j-1][i][0] == 1.) {
                 hr = x_ptr[j][i][0];
-                ur = x_ptr[j][i][1]/hr;
-                vr = x_ptr[j][i][2]/hr;
-                solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
-                amax = fmax(a, amax);
+                if (hr < user->tiny_h) {
+                    ur = 0.;
+                    vr = 0.;
+                    gij[0] = 0.; gij[1] = 0.; gij[2] = 0.;
+                }
+                else {
+                    ur = x_ptr[j][i][1]/hr;
+                    vr = x_ptr[j][i][2]/hr;
+                    solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
+                    amax = fmax(a, amax);
+                }
             }
             else if (b_ptr[j][i][0] == 1. && b_ptr[j-1][i][0] == 1.) {
                 gij[0] = 0.;
@@ -363,12 +448,31 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
             else {
                 hl = x_ptr[j-1][i][0];
                 hr = x_ptr[j][i][0];
-                ul = x_ptr[j-1][i][1]/hl;
-                ur = x_ptr[j][i][1]/hr;
-                vl = x_ptr[j-1][i][2]/hl;
-                vr = x_ptr[j][i][2]/hr;
-                solver(hl, hr, ul, ur, vl, vr, sn, cn, gij, &a);
-                amax = fmax(a,amax);
+                if (hl < user->tiny_h) {
+                    ul = 0.;
+                    vl = 0.;
+                }
+                else {
+                    ul = x_ptr[j-1][i][1]/hl;
+                    vl = x_ptr[j-1][i][2]/hl;
+                }
+
+                if (hr < user->tiny_h) {
+                    ur = 0.;
+                    vr = 0.;
+                }
+                else {
+                    ur = x_ptr[j][i][1]/hr;
+                    vr = x_ptr[j][i][2]/hr;
+                }
+
+                if (hl < user->tiny_h && hr < user->tiny_h) {
+                    gij[0] = 0.; gij[1] = 0.; gij[2] = 0.;
+                }
+                else {
+                    solver(hl, hr, ul, ur, vl, vr, sn, cn, gij, &a);
+                    amax = fmax(a,amax);
+                }
             }
             g_ptr[j][i][0] = gij[0];
             g_ptr[j][i][1] = gij[1];
@@ -514,6 +618,7 @@ int main(int argc, char **argv)
   	user->hy = 1.0;
     user->hu = 10.0; // water depth for the upstream of dam   [m]
     user->hd = 5.0;  // water depth for the downstream of dam [m]
+    user->tiny_h = 1e-7; 
 
   	ierr = PetscOptionsBegin(user->comm,NULL,"2D Mesh Options","");
   	PetscCall(ierr);
@@ -532,6 +637,8 @@ int main(int argc, char **argv)
   	}
   	ierr = PetscOptionsEnd();
   	PetscCall(ierr);
+    assert(user->hu >= 0.);
+    assert(user->hd >= 0.);
   	max_time = user->Nt * user->dt;
   	PetscPrintf(user->comm,"Max simulation time is %f\n",max_time);
 
@@ -586,7 +693,9 @@ int main(int argc, char **argv)
   	 * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
     SetInitialCondition(X, user);
     {
-    	char fname[PETSC_MAX_PATH_LEN] = "outputs/ex1_IC.dat";
+    	char fname[PETSC_MAX_PATH_LEN];
+        sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_IC.dat",                 \
+                       user->Nx,user->Ny,user->dt);
 	    PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer);
 	    VecView(X,viewer);
 	    PetscViewerDestroy(&viewer);
