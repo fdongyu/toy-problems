@@ -32,15 +32,14 @@ extern PetscErrorCode solver(PetscReal, PetscReal, PetscReal, PetscReal, PetscRe
 
 static PetscErrorCode SetInitialCondition(Vec X, User user) {
   DM             da;
-  PetscInt       i, j, xs, ys, xm, ym, Nx, Ny;
+  PetscInt       i, j, xs, ys, xm, ym;
   PetscInt       gxs, gys, gxm, gym;
   PetscScalar ***x_ptr;
   PetscBool      debug;
 
   PetscFunctionBeginUser;
   da    = user->da;
-  Nx    = user->Nx;
-  Ny    = user->Ny;
+
   debug = user->debug;
   // Get pointer to vector data
   DMDAVecGetArrayDOF(da, X, &x_ptr);
@@ -96,14 +95,12 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 PetscErrorCode Add_Buildings(User user) {
   // Local variables
   DM             da;
-  PetscInt       i, j, Nx, Ny, bu, bd, bl, br;
+  PetscInt       i, j, bu, bd, bl, br;
   PetscReal      hx, hy;
   PetscScalar ***b_ptr;
 
   PetscFunctionBeginUser;
   da = user->da;
-  Nx = user->Nx;
-  Ny = user->Ny;
   hx = user->hx;
   hy = user->hy;
 
@@ -155,7 +152,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   // Local variables
   User           user = (User)ptr;
   DM             da;
-  PetscInt       i, j, k, Nx, Ny;
+  PetscInt       i, j, k;
   Vec            localX, localF, localG;
   PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
   PetscBool      save;
@@ -163,8 +160,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   PetscFunctionBeginUser;
   da   = user->da;
-  Nx   = user->Nx;
-  Ny   = user->Ny;
   save = user->save;
 
   user->tstep = user->tstep + 1;
@@ -565,14 +560,11 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 int main(int argc, char **argv) {
   TS  ts;
   Vec X, R;
-  // Mat               h; // water depth [m]
-  DM             da;
   User           user;
   PetscErrorCode ierr;
   PetscReal      max_time;
   PetscBool      add_building;
   PetscViewer    viewer;
-  // char              outputfile[80];
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize program and set problem parameters
@@ -717,7 +709,6 @@ int main(int argc, char **argv) {
   VecDestroy(&user->F);
   VecDestroy(&user->G);
   VecDestroy(&user->B);
-  DMDestroy(&da);
   PetscCall(PetscFinalize());
   return 0;
 }
