@@ -221,97 +221,92 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 }
 
 PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar ***g_ptr, User user) {
-  // Local variables
-  MPI_Comm       self;
-  DM             da;
-  Vec            localB;
-  PetscReal      sn, cn, amax, hl, hr, ul, ur, vl, vr;
-  PetscInt       Nx, Ny;
-  PetscScalar ***b_ptr;
-  PetscScalar    fij[3], gij[3];
-  PetscScalar    a;
-  PetscBool      debug;
-  PetscInt       tstep;
 
   PetscFunctionBeginUser;
-  da    = user->da;
-  Nx    = user->Nx;
-  Ny    = user->Ny;
-  debug = user->debug;
-  tstep = user->tstep;
-  self  = PETSC_COMM_SELF;
 
+  DM da    = user->da;
+  PetscInt Nx    = user->Nx;
+  PetscInt Ny    = user->Ny;
+  PetscBool debug = user->debug;
+  PetscInt tstep = user->tstep;
+  MPI_Comm self  = PETSC_COMM_SELF;
+
+  Vec localB;
   PetscCall(DMGetLocalVector(da, &localB));
   PetscCall(DMGlobalToLocalBegin(da, user->B, INSERT_VALUES, localB));
   PetscCall(DMGlobalToLocalEnd(da, user->B, INSERT_VALUES, localB));
+
+  PetscScalar ***b_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, localB, &b_ptr));
 
-  amax = 0.0;
+  PetscReal amax = 0.0;
 
   for (PetscInt j = user->gys + 1; j < user->gys + user->gym; j = j + 1) {
     for (PetscInt i = user->gxs + 1; i < user->gxs + user->gxm; i = i + 1) {
+
       /* - - - - - - - - - - - - - - - *
        * Compute fluxes in x-driection *
        * - - - - - - - - - - - - - - - */
+      PetscScalar fij[3];
 
-      sn = 0.0;
-      cn = 1.0;
+      PetscReal sn = 0.0;
+      PetscReal cn = 1.0;
       if (i == 0) {
         // Enforce wall boundary on left side of box (west)
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
 
       } else if (i == Nx) {
         // Enforce wall boundary on right side of box (west)
-        hl = x_ptr[j][i - 1][0];
+        PetscReal hl = x_ptr[j][i - 1][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ul = x_ptr[j][i - 1][1] / hl;
-          vl = x_ptr[j][i - 1][2] / hl;
+          PetscReal ul = x_ptr[j][i - 1][1] / hl;
+          PetscReal vl = x_ptr[j][i - 1][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 1. && b_ptr[j][i - 1][0] == 0.) {
-        hl = x_ptr[j][i - 1][0];
+        PetscReal hl = x_ptr[j][i - 1][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ul = x_ptr[j][i - 1][1] / hl;
-          vl = x_ptr[j][i - 1][2] / hl;
+          PetscReal ul = x_ptr[j][i - 1][1] / hl;
+          PetscReal vl = x_ptr[j][i - 1][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 0. && b_ptr[j][i - 1][0] == 1.) {
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
@@ -320,8 +315,9 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
         fij[1] = 0.;
         fij[2] = 0.;
       } else {
-        hl = x_ptr[j][i - 1][0];
-        hr = x_ptr[j][i][0];
+        PetscReal hl = x_ptr[j][i - 1][0];
+        PetscReal hr = x_ptr[j][i][0];
+        PetscReal ul, vl, ur, vr;
 
         if (hl < user->tiny_h) {
           ul = 0.;
@@ -344,6 +340,8 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
+
+          PetscScalar a;
           solver(hl, hr, ul, ur, vl, vr, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
@@ -355,63 +353,64 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
       /* - - - - - - - - - - - - - - - *
        * Compute fluxes in y-driection *
        * - - - - - - - - - - - - - - - */
+      PetscScalar gij[3];
 
       sn = 1.0;
       cn = 0.0;
       if (j == 0) {
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
 
       } else if (j == Ny) {
-        hl = x_ptr[j - 1][i][0];
+        PetscReal hl = x_ptr[j - 1][i][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ul = x_ptr[j - 1][i][1] / hl;
-          vl = x_ptr[j - 1][i][2] / hl;
+          PetscReal ul = x_ptr[j - 1][i][1] / hl;
+          PetscReal vl = x_ptr[j - 1][i][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 1. && b_ptr[j - 1][i][0] == 0.) {
-        hl = x_ptr[j - 1][i][0];
+        PetscReal hl = x_ptr[j - 1][i][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ul = x_ptr[j - 1][i][1] / hl;
-          vl = x_ptr[j - 1][i][2] / hl;
+          PetscReal ul = x_ptr[j - 1][i][1] / hl;
+          PetscReal vl = x_ptr[j - 1][i][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 0. && b_ptr[j - 1][i][0] == 1.) {
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
@@ -420,8 +419,10 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
         gij[1] = 0.;
         gij[2] = 0.;
       } else {
-        hl = x_ptr[j - 1][i][0];
-        hr = x_ptr[j][i][0];
+        PetscReal hl = x_ptr[j - 1][i][0];
+        PetscReal hr = x_ptr[j][i][0];
+        PetscReal ul, vl, ur, vr;
+
         if (hl < user->tiny_h) {
           ul = 0.;
           vl = 0.;
@@ -443,6 +444,8 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
+
+          PetscScalar a;
           solver(hl, hr, ul, ur, vl, vr, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
