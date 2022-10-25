@@ -32,7 +32,7 @@ extern PetscErrorCode solver(PetscReal, PetscReal, PetscReal, PetscReal, PetscRe
 
 static PetscErrorCode SetInitialCondition(Vec X, User user) {
   DM             da;
-  PetscInt       i, j, xs, ys, xm, ym;
+  PetscInt       xs, ys, xm, ym;
   PetscInt       gxs, gys, gxm, gym;
   PetscScalar ***x_ptr;
   PetscBool      debug;
@@ -71,8 +71,8 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 
   // Set higher water on the left of the dam
   VecZeroEntries(X);
-  for (j = ys; j < ys + ym; j = j + 1) {
-    for (i = xs; i < xs + xm; i = i + 1) {
+  for (PetscInt j = ys; j < ys + ym; j = j + 1) {
+    for (PetscInt i = xs; i < xs + xm; i = i + 1) {
       if (j < 95) {
         x_ptr[j][i][0] = user->hu;
       } else {
@@ -95,7 +95,7 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 PetscErrorCode Add_Buildings(User user) {
   // Local variables
   DM             da;
-  PetscInt       i, j, bu, bd, bl, br;
+  PetscInt       bu, bd, bl, br;
   PetscReal      hx, hy;
   PetscScalar ***b_ptr;
 
@@ -130,8 +130,8 @@ PetscErrorCode Add_Buildings(User user) {
   x x x x x x x x x x x
 
   */
-  for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
-    for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
+  for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
+    for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
       if (i < bu && j >= bl && j < br) {
         b_ptr[j][i][0] = 1.;
       } else if (i >= bd && j >= bl && j < br) {
@@ -152,7 +152,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   // Local variables
   User           user = (User)ptr;
   DM             da;
-  PetscInt       i, j, k;
   Vec            localX, localF, localG;
   PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
   PetscBool      save;
@@ -193,9 +192,9 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   fluxes(x_ptr, f_ptr, g_ptr, user);
 
-  for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
-    for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
-      for (k = 0; k < user->dof; k = k + 1) {
+  for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
+    for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
+      for (PetscInt k = 0; k < user->dof; k = k + 1) {
         f_ptr1[j][i][k] = -(f_ptr[j][i + 1][k] - f_ptr[j][i][k] + g_ptr[j + 1][i][k] - g_ptr[j][i][k]);
       }
     }
@@ -227,7 +226,7 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
   DM             da;
   Vec            localB;
   PetscReal      sn, cn, amax, hl, hr, ul, ur, vl, vr;
-  PetscInt       i, j, Nx, Ny;
+  PetscInt       Nx, Ny;
   PetscScalar ***b_ptr;
   PetscScalar    fij[3], gij[3];
   PetscScalar    a;
@@ -249,8 +248,8 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
 
   amax = 0.0;
 
-  for (j = user->gys + 1; j < user->gys + user->gym; j = j + 1) {
-    for (i = user->gxs + 1; i < user->gxs + user->gxm; i = i + 1) {
+  for (PetscInt j = user->gys + 1; j < user->gys + user->gym; j = j + 1) {
+    for (PetscInt i = user->gxs + 1; i < user->gxs + user->gxm; i = i + 1) {
       /* - - - - - - - - - - - - - - - *
        * Compute fluxes in x-driection *
        * - - - - - - - - - - - - - - - */
@@ -473,7 +472,6 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   PetscReal duperp, dW[3], al1, al3, ar1, ar3, R[3][3], da1, da3, a1, a2, a3;
   PetscReal dupar, uperpl, uperpr, A[3][3], FL[3], FR[3];
   PetscReal grav;
-  PetscInt  i, j;
 
   grav = 9.806;
 
@@ -530,8 +528,8 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   }
 
   // Compute interface flux
-  for (i = 0; i < 3; i++) {
-    for (j = 0; j < 3; j++) {
+  for (PetscInt i = 0; i < 3; i++) {
+    for (PetscInt j = 0; j < 3; j++) {
       A[i][j] = 0.0;
     }
   }
