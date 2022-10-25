@@ -467,42 +467,41 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
 
 PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, PetscReal vl, PetscReal vr, PetscReal sn, PetscReal cn,
                       PetscScalar *fij, PetscScalar *amax) {
-  // Local variables
-  PetscReal duml, dumr, cl, cr, hhat, uhat, vhat, chat, uperp, dh, du, dv;
-  PetscReal duperp, dW[3], al1, al3, ar1, ar3, R[3][3], da1, da3, a1, a2, a3;
-  PetscReal dupar, uperpl, uperpr, A[3][3], FL[3], FR[3];
-  PetscReal grav;
-
-  grav = 9.806;
 
   PetscFunctionBeginUser;
 
+  PetscReal grav = 9.806;
+
   // Compute Roe averages
-  duml   = pow(hl, 0.5);
-  dumr   = pow(hr, 0.5);
-  cl     = pow(grav * hl, 0.5);
-  cr     = pow(grav * hr, 0.5);
-  hhat   = duml * dumr;
-  uhat   = (duml * ul + dumr * ur) / (duml + dumr);
-  vhat   = (duml * vl + dumr * vr) / (duml + dumr);
-  chat   = pow(0.5 * grav * (hl + hr), 0.5);
-  uperp  = uhat * cn + vhat * sn;
-  dh     = hr - hl;
-  du     = ur - ul;
-  dv     = vr - vl;
-  dupar  = -du * sn + dv * cn;
-  duperp = du * cn + dv * sn;
+  PetscReal duml   = pow(hl, 0.5);
+  PetscReal dumr   = pow(hr, 0.5);
+  PetscReal cl     = pow(grav * hl, 0.5);
+  PetscReal cr     = pow(grav * hr, 0.5);
+  PetscReal hhat   = duml * dumr;
+  PetscReal uhat   = (duml * ul + dumr * ur) / (duml + dumr);
+  PetscReal vhat   = (duml * vl + dumr * vr) / (duml + dumr);
+  PetscReal chat   = pow(0.5 * grav * (hl + hr), 0.5);
+  PetscReal uperp  = uhat * cn + vhat * sn;
+
+  PetscReal dh     = hr - hl;
+  PetscReal du     = ur - ul;
+  PetscReal dv     = vr - vl;
+  PetscReal dupar  = -du * sn + dv * cn;
+  PetscReal duperp = du * cn + dv * sn;
+
+  PetscReal dW[3];
   dW[0]  = 0.5 * (dh - hhat * duperp / chat);
   dW[1]  = hhat * dupar;
   dW[2]  = 0.5 * (dh + hhat * duperp / chat);
 
-  uperpl = ul * cn + vl * sn;
-  uperpr = ur * cn + vr * sn;
-  al1    = uperpl - cl;
-  al3    = uperpl + cl;
-  ar1    = uperpr - cr;
-  ar3    = uperpr + cr;
+  PetscReal uperpl = ul * cn + vl * sn;
+  PetscReal uperpr = ur * cn + vr * sn;
+  PetscReal al1    = uperpl - cl;
+  PetscReal al3    = uperpl + cl;
+  PetscReal ar1    = uperpr - cr;
+  PetscReal ar3    = uperpr + cr;
 
+  PetscReal R[3][3];
   R[0][0] = 1.0;
   R[0][1] = 0.0;
   R[0][2] = 1.0;
@@ -513,11 +512,11 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   R[2][1] = cn;
   R[2][2] = vhat + chat * sn;
 
-  da1 = fmax(0.0, 2.0 * (ar1 - al1));
-  da3 = fmax(0.0, 2.0 * (ar3 - al3));
-  a1  = fabs(uperp - chat);
-  a2  = fabs(uperp);
-  a3  = fabs(uperp + chat);
+  PetscReal da1 = fmax(0.0, 2.0 * (ar1 - al1));
+  PetscReal da3 = fmax(0.0, 2.0 * (ar3 - al3));
+  PetscReal a1  = fabs(uperp - chat);
+  PetscReal a2  = fabs(uperp);
+  PetscReal a3  = fabs(uperp + chat);
 
   // Critical flow fix
   if (a1 < da1) {
@@ -528,6 +527,7 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   }
 
   // Compute interface flux
+  PetscReal A[3][3];
   for (PetscInt i = 0; i < 3; i++) {
     for (PetscInt j = 0; j < 3; j++) {
       A[i][j] = 0.0;
@@ -537,6 +537,7 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   A[1][1] = a2;
   A[2][2] = a3;
 
+  PetscReal FL[3], FR[3];
   FL[0] = uperpl * hl;
   FL[1] = ul * uperpl * hl + 0.5 * grav * hl * hl * cn;
   FL[2] = vl * uperpl * hl + 0.5 * grav * hl * hl * sn;
