@@ -1,0 +1,30 @@
+name: style
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+        compiler: [clang]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Environment setup
+      uses: actions/checkout@v2
+    - name: Install clang-format
+      run: sudo apt-get install clang-format
+    - name: C style
+      env:
+        CC: ${{ matrix.compiler }}
+        FC: gfortran-11
+      run: |
+        make format-c -j2 && git diff --exit-code
