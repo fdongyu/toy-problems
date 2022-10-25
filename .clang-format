@@ -2,10 +2,10 @@ BasedOnStyle: "Google"
 
 AlignAfterOpenBracket:        Align
 AlignArrayOfStructures:       Left
-AlignConsecutiveAssignments:  AcrossComments
+AlignConsecutiveAssignments:  Consecutive
 AlignConsecutiveDeclarations: Consecutive
 AlignEscapedNewlines:         true
-AlignOperands:                Align
+AlignOperands:                AlignAfterOperator
 AlignTrailingComments:        true
 AllowShortIfStatementsOnASingleLine: AllIfsAndElse
 ColumnLimit:                  150
