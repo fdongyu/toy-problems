@@ -22,7 +22,7 @@ struct _n_User {
   Vec       subdomain;
   PetscInt  xs, ys, xm, ym, xe, ye;
   PetscInt  gxs, gxm, gys, gym, gxe, gye;
-  PetscBool debug, save;
+  PetscBool debug, save, add_building;
   PetscInt  tstep;
 };
 
@@ -31,21 +31,21 @@ extern PetscErrorCode fluxes(PetscScalar ***, PetscScalar ***, PetscScalar ***, 
 extern PetscErrorCode solver(PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscScalar *, PetscScalar *);
 
 static PetscErrorCode SetInitialCondition(Vec X, User user) {
-  DM             da;
-  PetscInt       xs, ys, xm, ym;
-  PetscInt       gxs, gys, gxm, gym;
-  PetscScalar ***x_ptr;
-  PetscBool      debug;
 
   PetscFunctionBeginUser;
-  da    = user->da;
+  DM da = user->da;
 
-  debug = user->debug;
+  PetscBool debug = user->debug;
+
   // Get pointer to vector data
+  PetscScalar ***x_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, X, &x_ptr));
 
   // Get local grid boundaries
+  PetscInt xs, ys, xm, ym;
   PetscCall(DMDAGetCorners(da, &xs, &ys, 0, &xm, &ym, 0));
+
+  PetscInt gxs, gys, gxm, gym;
   PetscCall(DMDAGetGhostCorners(da, &gxs, &gys, 0, &gxm, &gym, 0));
   if (debug) {
     MPI_Comm self;
@@ -93,23 +93,21 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 }
 
 PetscErrorCode Add_Buildings(User user) {
-  // Local variables
-  DM             da;
-  PetscInt       bu, bd, bl, br;
-  PetscReal      hx, hy;
-  PetscScalar ***b_ptr;
 
   PetscFunctionBeginUser;
-  da = user->da;
-  hx = user->hx;
-  hy = user->hy;
 
-  bu = 30 / hx;
-  bd = 105 / hx;
-  bl = 95 / hy;
-  br = 105 / hy;
+  DM da = user->da;
+  PetscReal hx = user->hx;
+  PetscReal hy = user->hy;
 
+  PetscReal bu = 30 / hx;
+  PetscReal bd = 105 / hx;
+  PetscReal bl = 95 / hy;
+  PetscReal br = 105 / hy;
+
+  PetscScalar ***b_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
+
   PetscCall(VecZeroEntries(user->B));
   /*
 
@@ -149,23 +147,20 @@ PetscErrorCode Add_Buildings(User user) {
 }
 
 PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
-  // Local variables
-  User           user = (User)ptr;
-  DM             da;
-  Vec            localX, localF, localG;
-  PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
-  PetscBool      save;
-  PetscViewer    viewer;
 
   PetscFunctionBeginUser;
-  da   = user->da;
-  save = user->save;
+
+  User user = (User)ptr;
+
+  DM da   = user->da;
+  PetscBool save = user->save;
 
   user->tstep = user->tstep + 1;
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  corrector
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+  Vec localX, localF, localG;
   PetscCall(DMGetLocalVector(da, &localX));
   PetscCall(DMGetLocalVector(da, &localF));
   PetscCall(DMGetLocalVector(da, &localG));
@@ -185,6 +180,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(DMGlobalToLocalEnd(da, user->G, INSERT_VALUES, localG));
 
   // Get pointers to vector data
+  PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
   PetscCall(DMDAVecGetArrayDOF(da, localX, &x_ptr));
   PetscCall(DMDAVecGetArrayDOF(da, localF, &f_ptr));
   PetscCall(DMDAVecGetArrayDOF(da, localG, &g_ptr));
@@ -213,6 +209,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   if (save) {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
+
+    PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(VecView(X, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
@@ -560,19 +558,15 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 }
 
 int main(int argc, char **argv) {
-  TS  ts;
-  Vec X, R;
-  User           user;
+
   PetscErrorCode ierr;
-  PetscReal      max_time;
-  PetscBool      add_building;
-  PetscViewer    viewer;
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize program and set problem parameters
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   PetscCall(PetscInitialize(&argc, &argv, (char *)0, help));
 
+  User user;
   PetscCall(PetscNew(&user));
   user->dt    = 0.04;
   user->Nt    = 180;
@@ -604,7 +598,7 @@ int main(int argc, char **argv) {
     PetscCall(PetscOptionsReal("-hu", "hu", "", user->hu, &user->hu, NULL));
     PetscCall(PetscOptionsReal("-hd", "hd", "", user->hd, &user->hd, NULL));
     PetscCall(PetscOptionsReal("-dt", "dt", "", user->dt, &user->dt, NULL));
-    PetscCall(PetscOptionsBool("-b", "Add buildings", "", add_building, &add_building, NULL));
+    PetscCall(PetscOptionsBool("-b", "Add buildings", "", user->add_building, &user->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", user->debug, &user->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", user->save, &user->save, NULL));
   }
@@ -612,7 +606,8 @@ int main(int argc, char **argv) {
   PetscCall(ierr);
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
-  max_time = user->Nt * user->dt;
+
+  PetscReal max_time = user->Nt * user->dt;
   PetscPrintf(user->comm, "Max simulation time is %f\n", max_time);
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
@@ -653,6 +648,7 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Extract global vectors from DMDA
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+  Vec X, R;
   PetscCall(DMCreateGlobalVector(user->da, &X));  // size = dof * number of cells
   PetscCall(VecDuplicate(X, &user->F));
   PetscCall(VecDuplicate(X, &user->G));
@@ -666,6 +662,8 @@ int main(int argc, char **argv) {
   {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_IC.dat", user->Nx, user->Ny, user->dt);
+
+    PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(VecView(X, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
@@ -674,7 +672,7 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Add buildings
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  if (add_building) {
+  if (user->add_building) {
     PetscCall(Add_Buildings(user));
   }
 
@@ -686,6 +684,7 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create timestepping solver context
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+  TS  ts;
   PetscCall(TSCreate(user->comm, &ts));
   PetscCall(TSSetProblemType(ts, TS_NONLINEAR));
   PetscCall(TSSetType(ts, TSEULER));
