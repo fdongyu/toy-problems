@@ -31,7 +31,6 @@ extern PetscErrorCode fluxes(PetscScalar ***, PetscScalar ***, PetscScalar ***, 
 extern PetscErrorCode solver(PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscScalar *, PetscScalar *);
 
 static PetscErrorCode SetInitialCondition(Vec X, User user) {
-
   PetscFunctionBeginUser;
   DM da = user->da;
 
@@ -93,10 +92,9 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 }
 
 PetscErrorCode Add_Buildings(User user) {
-
   PetscFunctionBeginUser;
 
-  DM da = user->da;
+  DM        da = user->da;
   PetscReal hx = user->hx;
   PetscReal hy = user->hy;
 
@@ -147,12 +145,11 @@ PetscErrorCode Add_Buildings(User user) {
 }
 
 PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
-
   PetscFunctionBeginUser;
 
   User user = (User)ptr;
 
-  DM da   = user->da;
+  DM        da   = user->da;
   PetscBool save = user->save;
 
   user->tstep = user->tstep + 1;
@@ -219,15 +216,14 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 }
 
 PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar ***g_ptr, User user) {
-
   PetscFunctionBeginUser;
 
-  DM da    = user->da;
-  PetscInt Nx    = user->Nx;
-  PetscInt Ny    = user->Ny;
+  DM        da    = user->da;
+  PetscInt  Nx    = user->Nx;
+  PetscInt  Ny    = user->Ny;
   PetscBool debug = user->debug;
-  PetscInt tstep = user->tstep;
-  MPI_Comm self  = PETSC_COMM_SELF;
+  PetscInt  tstep = user->tstep;
+  MPI_Comm  self  = PETSC_COMM_SELF;
 
   Vec localB;
   PetscCall(DMGetLocalVector(da, &localB));
@@ -241,7 +237,6 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
 
   for (PetscInt j = user->gys + 1; j < user->gys + user->gym; j = j + 1) {
     for (PetscInt i = user->gxs + 1; i < user->gxs + user->gxm; i = i + 1) {
-
       /* - - - - - - - - - - - - - - - *
        * Compute fluxes in x-driection *
        * - - - - - - - - - - - - - - - */
@@ -338,7 +333,6 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-
           PetscScalar a;
           solver(hl, hr, ul, ur, vl, vr, sn, cn, fij, &a);
           amax = fmax(a, amax);
@@ -442,7 +436,6 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-
           PetscScalar a;
           solver(hl, hr, ul, ur, vl, vr, sn, cn, gij, &a);
           amax = fmax(a, amax);
@@ -468,21 +461,20 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
 
 PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, PetscReal vl, PetscReal vr, PetscReal sn, PetscReal cn,
                       PetscScalar *fij, PetscScalar *amax) {
-
   PetscFunctionBeginUser;
 
   PetscReal grav = 9.806;
 
   // Compute Roe averages
-  PetscReal duml   = pow(hl, 0.5);
-  PetscReal dumr   = pow(hr, 0.5);
-  PetscReal cl     = pow(grav * hl, 0.5);
-  PetscReal cr     = pow(grav * hr, 0.5);
-  PetscReal hhat   = duml * dumr;
-  PetscReal uhat   = (duml * ul + dumr * ur) / (duml + dumr);
-  PetscReal vhat   = (duml * vl + dumr * vr) / (duml + dumr);
-  PetscReal chat   = pow(0.5 * grav * (hl + hr), 0.5);
-  PetscReal uperp  = uhat * cn + vhat * sn;
+  PetscReal duml  = pow(hl, 0.5);
+  PetscReal dumr  = pow(hr, 0.5);
+  PetscReal cl    = pow(grav * hl, 0.5);
+  PetscReal cr    = pow(grav * hr, 0.5);
+  PetscReal hhat  = duml * dumr;
+  PetscReal uhat  = (duml * ul + dumr * ur) / (duml + dumr);
+  PetscReal vhat  = (duml * vl + dumr * vr) / (duml + dumr);
+  PetscReal chat  = pow(0.5 * grav * (hl + hr), 0.5);
+  PetscReal uperp = uhat * cn + vhat * sn;
 
   PetscReal dh     = hr - hl;
   PetscReal du     = ur - ul;
@@ -491,9 +483,9 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   PetscReal duperp = du * cn + dv * sn;
 
   PetscReal dW[3];
-  dW[0]  = 0.5 * (dh - hhat * duperp / chat);
-  dW[1]  = hhat * dupar;
-  dW[2]  = 0.5 * (dh + hhat * duperp / chat);
+  dW[0] = 0.5 * (dh - hhat * duperp / chat);
+  dW[1] = hhat * dupar;
+  dW[2] = 0.5 * (dh + hhat * duperp / chat);
 
   PetscReal uperpl = ul * cn + vl * sn;
   PetscReal uperpr = ur * cn + vr * sn;
@@ -558,7 +550,6 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 }
 
 int main(int argc, char **argv) {
-
   PetscErrorCode ierr;
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
@@ -613,8 +604,8 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize DMDA
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  PetscCall(DMDACreate2d(user->comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED, DMDA_STENCIL_BOX, user->Nx, user->Ny, PETSC_DECIDE, PETSC_DECIDE, user->dof, 1,
-               NULL, NULL, &user->da));
+  PetscCall(DMDACreate2d(user->comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED, DMDA_STENCIL_BOX, user->Nx, user->Ny, PETSC_DECIDE, PETSC_DECIDE,
+                         user->dof, 1, NULL, NULL, &user->da));
   PetscCall(DMSetFromOptions(user->da));
   PetscCall(DMSetUp(user->da));
   PetscCall(DMDASetUniformCoordinates(user->da, 0.0, user->Nx * user->hx, 0.0, user->Ny * user->hy, 0.0, 0.0));
@@ -684,7 +675,7 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create timestepping solver context
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  TS  ts;
+  TS ts;
   PetscCall(TSCreate(user->comm, &ts));
   PetscCall(TSSetProblemType(ts, TS_NONLINEAR));
   PetscCall(TSSetType(ts, TSEULER));
