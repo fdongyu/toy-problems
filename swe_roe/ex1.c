@@ -22,7 +22,7 @@ struct _n_User {
   Vec       subdomain;
   PetscInt  xs, ys, xm, ym, xe, ye;
   PetscInt  gxs, gxm, gys, gym, gxe, gye;
-  PetscBool debug, save;
+  PetscBool debug, save, add_building;
   PetscInt  tstep;
 };
 
@@ -31,23 +31,21 @@ extern PetscErrorCode fluxes(PetscScalar ***, PetscScalar ***, PetscScalar ***, 
 extern PetscErrorCode solver(PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscReal, PetscScalar *, PetscScalar *);
 
 static PetscErrorCode SetInitialCondition(Vec X, User user) {
-  DM             da;
-  PetscInt       i, j, xs, ys, xm, ym, Nx, Ny;
-  PetscInt       gxs, gys, gxm, gym;
-  PetscScalar ***x_ptr;
-  PetscBool      debug;
-
   PetscFunctionBeginUser;
-  da    = user->da;
-  Nx    = user->Nx;
-  Ny    = user->Ny;
-  debug = user->debug;
+  DM da = user->da;
+
+  PetscBool debug = user->debug;
+
   // Get pointer to vector data
-  DMDAVecGetArrayDOF(da, X, &x_ptr);
+  PetscScalar ***x_ptr;
+  PetscCall(DMDAVecGetArrayDOF(da, X, &x_ptr));
 
   // Get local grid boundaries
-  DMDAGetCorners(da, &xs, &ys, 0, &xm, &ym, 0);
-  DMDAGetGhostCorners(da, &gxs, &gys, 0, &gxm, &gym, 0);
+  PetscInt xs, ys, xm, ym;
+  PetscCall(DMDAGetCorners(da, &xs, &ys, 0, &xm, &ym, 0));
+
+  PetscInt gxs, gys, gxm, gym;
+  PetscCall(DMDAGetGhostCorners(da, &gxs, &gys, 0, &gxm, &gym, 0));
   if (debug) {
     MPI_Comm self;
     self = PETSC_COMM_SELF;
@@ -71,9 +69,9 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
   user->gye = user->gys + user->gym - 1;
 
   // Set higher water on the left of the dam
-  VecZeroEntries(X);
-  for (j = ys; j < ys + ym; j = j + 1) {
-    for (i = xs; i < xs + xm; i = i + 1) {
+  PetscCall(VecZeroEntries(X));
+  for (PetscInt j = ys; j < ys + ym; j = j + 1) {
+    for (PetscInt i = xs; i < xs + xm; i = i + 1) {
       if (j < 95) {
         x_ptr[j][i][0] = user->hu;
       } else {
@@ -82,11 +80,11 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
     }
   }
 
-  VecZeroEntries(user->F);
-  VecZeroEntries(user->G);
+  PetscCall(VecZeroEntries(user->F));
+  PetscCall(VecZeroEntries(user->G));
 
   // Restore vectors
-  DMDAVecRestoreArrayDOF(da, X, &x_ptr);
+  PetscCall(DMDAVecRestoreArrayDOF(da, X, &x_ptr));
 
   PetscPrintf(user->comm, "Initialization sucesses!\n");
 
@@ -94,26 +92,21 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 }
 
 PetscErrorCode Add_Buildings(User user) {
-  // Local variables
-  DM             da;
-  PetscInt       i, j, Nx, Ny, bu, bd, bl, br;
-  PetscReal      hx, hy;
-  PetscScalar ***b_ptr;
-
   PetscFunctionBeginUser;
-  da = user->da;
-  Nx = user->Nx;
-  Ny = user->Ny;
-  hx = user->hx;
-  hy = user->hy;
 
-  bu = 30 / hx;
-  bd = 105 / hx;
-  bl = 95 / hy;
-  br = 105 / hy;
+  DM        da = user->da;
+  PetscReal hx = user->hx;
+  PetscReal hy = user->hy;
 
-  DMDAVecGetArrayDOF(da, user->B, &b_ptr);
-  VecZeroEntries(user->B);
+  PetscReal bu = 30 / hx;
+  PetscReal bd = 105 / hx;
+  PetscReal bl = 95 / hy;
+  PetscReal br = 105 / hy;
+
+  PetscScalar ***b_ptr;
+  PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
+
+  PetscCall(VecZeroEntries(user->B));
   /*
 
   x represents the reflecting wall,
@@ -133,8 +126,8 @@ PetscErrorCode Add_Buildings(User user) {
   x x x x x x x x x x x
 
   */
-  for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
-    for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
+  for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
+    for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
       if (i < bu && j >= bl && j < br) {
         b_ptr[j][i][0] = 1.;
       } else if (i >= bd && j >= bl && j < br) {
@@ -143,38 +136,31 @@ PetscErrorCode Add_Buildings(User user) {
     }
   }
 
-  DMDAVecRestoreArrayDOF(da, user->B, &b_ptr);
+  PetscCall(DMDAVecRestoreArrayDOF(da, user->B, &b_ptr));
 
-  PetscPrintf(user->comm, "Building size: bu=%d,bd=%d,bl=%d,br=%d\n", bu, bd, bl, br);
-  PetscPrintf(user->comm, "Buildings added sucessfully!\n");
+  PetscCall(PetscPrintf(user->comm, "Building size: bu=%d,bd=%d,bl=%d,br=%d\n", bu, bd, bl, br));
+  PetscCall(PetscPrintf(user->comm, "Buildings added sucessfully!\n"));
 
   PetscFunctionReturn(0);
 }
 
 PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
-  // Local variables
-  User           user = (User)ptr;
-  DM             da;
-  PetscInt       i, j, k, Nx, Ny;
-  Vec            localX, localF, localG;
-  PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
-  PetscBool      save;
-  PetscViewer    viewer;
-
   PetscFunctionBeginUser;
-  da   = user->da;
-  Nx   = user->Nx;
-  Ny   = user->Ny;
-  save = user->save;
+
+  User user = (User)ptr;
+
+  DM        da   = user->da;
+  PetscBool save = user->save;
 
   user->tstep = user->tstep + 1;
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  corrector
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  DMGetLocalVector(da, &localX);
-  DMGetLocalVector(da, &localF);
-  DMGetLocalVector(da, &localG);
+  Vec localX, localF, localG;
+  PetscCall(DMGetLocalVector(da, &localX));
+  PetscCall(DMGetLocalVector(da, &localF));
+  PetscCall(DMGetLocalVector(da, &localG));
 
   /*
   ! Scatter ghost points to local vector, using the 2-step process
@@ -183,141 +169,137 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   ! done while messages are in transition
   */
 
-  DMGlobalToLocalBegin(da, X, INSERT_VALUES, localX);
-  DMGlobalToLocalEnd(da, X, INSERT_VALUES, localX);
-  DMGlobalToLocalBegin(da, user->F, INSERT_VALUES, localF);
-  DMGlobalToLocalEnd(da, user->F, INSERT_VALUES, localF);
-  DMGlobalToLocalBegin(da, user->G, INSERT_VALUES, localG);
-  DMGlobalToLocalEnd(da, user->G, INSERT_VALUES, localG);
+  PetscCall(DMGlobalToLocalBegin(da, X, INSERT_VALUES, localX));
+  PetscCall(DMGlobalToLocalEnd(da, X, INSERT_VALUES, localX));
+  PetscCall(DMGlobalToLocalBegin(da, user->F, INSERT_VALUES, localF));
+  PetscCall(DMGlobalToLocalEnd(da, user->F, INSERT_VALUES, localF));
+  PetscCall(DMGlobalToLocalBegin(da, user->G, INSERT_VALUES, localG));
+  PetscCall(DMGlobalToLocalEnd(da, user->G, INSERT_VALUES, localG));
 
   // Get pointers to vector data
-  DMDAVecGetArrayDOF(da, localX, &x_ptr);
-  DMDAVecGetArrayDOF(da, localF, &f_ptr);
-  DMDAVecGetArrayDOF(da, localG, &g_ptr);
-  DMDAVecGetArrayDOF(da, F, &f_ptr1);
+  PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
+  PetscCall(DMDAVecGetArrayDOF(da, localX, &x_ptr));
+  PetscCall(DMDAVecGetArrayDOF(da, localF, &f_ptr));
+  PetscCall(DMDAVecGetArrayDOF(da, localG, &g_ptr));
+  PetscCall(DMDAVecGetArrayDOF(da, F, &f_ptr1));
 
-  fluxes(x_ptr, f_ptr, g_ptr, user);
+  PetscCall(fluxes(x_ptr, f_ptr, g_ptr, user));
 
-  for (j = user->ys; j < user->ys + user->ym; j = j + 1) {
-    for (i = user->xs; i < user->xs + user->xm; i = i + 1) {
-      for (k = 0; k < user->dof; k = k + 1) {
+  for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
+    for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
+      for (PetscInt k = 0; k < user->dof; k = k + 1) {
         f_ptr1[j][i][k] = -(f_ptr[j][i + 1][k] - f_ptr[j][i][k] + g_ptr[j + 1][i][k] - g_ptr[j][i][k]);
       }
     }
   }
 
   // Restore vectors
-  DMDAVecRestoreArrayDOF(da, localX, &x_ptr);
-  DMDAVecRestoreArrayDOF(da, localF, &f_ptr);
-  DMDAVecRestoreArrayDOF(da, localG, &g_ptr);
-  DMDAVecRestoreArrayDOF(da, F, &f_ptr1);
+  PetscCall(DMDAVecRestoreArrayDOF(da, localX, &x_ptr));
+  PetscCall(DMDAVecRestoreArrayDOF(da, localF, &f_ptr));
+  PetscCall(DMDAVecRestoreArrayDOF(da, localG, &g_ptr));
+  PetscCall(DMDAVecRestoreArrayDOF(da, F, &f_ptr1));
 
-  DMRestoreLocalVector(da, &localX);
-  DMRestoreLocalVector(da, &localF);
-  DMRestoreLocalVector(da, &localG);
+  PetscCall(DMRestoreLocalVector(da, &localX));
+  PetscCall(DMRestoreLocalVector(da, &localF));
+  PetscCall(DMRestoreLocalVector(da, &localG));
 
   if (save) {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
-    PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer);
-    VecView(X, viewer);
-    PetscViewerDestroy(&viewer);
+
+    PetscViewer viewer;
+    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+    PetscCall(VecView(X, viewer));
+    PetscCall(PetscViewerDestroy(&viewer));
   }
   PetscFunctionReturn(0);
 }
 
 PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar ***g_ptr, User user) {
-  // Local variables
-  MPI_Comm       self;
-  DM             da;
-  Vec            localB;
-  PetscReal      sn, cn, amax, hl, hr, ul, ur, vl, vr;
-  PetscInt       i, j, Nx, Ny;
-  PetscScalar ***b_ptr;
-  PetscScalar    fij[3], gij[3];
-  PetscScalar    a;
-  PetscBool      debug;
-  PetscInt       tstep;
-
   PetscFunctionBeginUser;
-  da    = user->da;
-  Nx    = user->Nx;
-  Ny    = user->Ny;
-  debug = user->debug;
-  tstep = user->tstep;
-  self  = PETSC_COMM_SELF;
 
-  DMGetLocalVector(da, &localB);
-  DMGlobalToLocalBegin(da, user->B, INSERT_VALUES, localB);
-  DMGlobalToLocalEnd(da, user->B, INSERT_VALUES, localB);
-  DMDAVecGetArrayDOF(da, localB, &b_ptr);
+  DM        da    = user->da;
+  PetscInt  Nx    = user->Nx;
+  PetscInt  Ny    = user->Ny;
+  PetscBool debug = user->debug;
+  PetscInt  tstep = user->tstep;
+  MPI_Comm  self  = PETSC_COMM_SELF;
 
-  amax = 0.0;
+  Vec localB;
+  PetscCall(DMGetLocalVector(da, &localB));
+  PetscCall(DMGlobalToLocalBegin(da, user->B, INSERT_VALUES, localB));
+  PetscCall(DMGlobalToLocalEnd(da, user->B, INSERT_VALUES, localB));
 
-  for (j = user->gys + 1; j < user->gys + user->gym; j = j + 1) {
-    for (i = user->gxs + 1; i < user->gxs + user->gxm; i = i + 1) {
+  PetscScalar ***b_ptr;
+  PetscCall(DMDAVecGetArrayDOF(da, localB, &b_ptr));
+
+  PetscReal amax = 0.0;
+
+  for (PetscInt j = user->gys + 1; j < user->gys + user->gym; j = j + 1) {
+    for (PetscInt i = user->gxs + 1; i < user->gxs + user->gxm; i = i + 1) {
       /* - - - - - - - - - - - - - - - *
        * Compute fluxes in x-driection *
        * - - - - - - - - - - - - - - - */
+      PetscScalar fij[3];
 
-      sn = 0.0;
-      cn = 1.0;
+      PetscReal sn = 0.0;
+      PetscReal cn = 1.0;
       if (i == 0) {
         // Enforce wall boundary on left side of box (west)
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
 
       } else if (i == Nx) {
         // Enforce wall boundary on right side of box (west)
-        hl = x_ptr[j][i - 1][0];
+        PetscReal hl = x_ptr[j][i - 1][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ul = x_ptr[j][i - 1][1] / hl;
-          vl = x_ptr[j][i - 1][2] / hl;
+          PetscReal ul = x_ptr[j][i - 1][1] / hl;
+          PetscReal vl = x_ptr[j][i - 1][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 1. && b_ptr[j][i - 1][0] == 0.) {
-        hl = x_ptr[j][i - 1][0];
+        PetscReal hl = x_ptr[j][i - 1][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ul = x_ptr[j][i - 1][1] / hl;
-          vl = x_ptr[j][i - 1][2] / hl;
+          PetscReal ul = x_ptr[j][i - 1][1] / hl;
+          PetscReal vl = x_ptr[j][i - 1][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, -ul, vl, vl, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 0. && b_ptr[j][i - 1][0] == 1.) {
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           fij[0] = 0.;
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, -ur, ur, vr, vr, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
@@ -326,8 +308,9 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
         fij[1] = 0.;
         fij[2] = 0.;
       } else {
-        hl = x_ptr[j][i - 1][0];
-        hr = x_ptr[j][i][0];
+        PetscReal hl = x_ptr[j][i - 1][0];
+        PetscReal hr = x_ptr[j][i][0];
+        PetscReal ul, vl, ur, vr;
 
         if (hl < user->tiny_h) {
           ul = 0.;
@@ -350,6 +333,7 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
           fij[1] = 0.;
           fij[2] = 0.;
         } else {
+          PetscScalar a;
           solver(hl, hr, ul, ur, vl, vr, sn, cn, fij, &a);
           amax = fmax(a, amax);
         }
@@ -361,63 +345,64 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
       /* - - - - - - - - - - - - - - - *
        * Compute fluxes in y-driection *
        * - - - - - - - - - - - - - - - */
+      PetscScalar gij[3];
 
       sn = 1.0;
       cn = 0.0;
       if (j == 0) {
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
 
       } else if (j == Ny) {
-        hl = x_ptr[j - 1][i][0];
+        PetscReal hl = x_ptr[j - 1][i][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ul = x_ptr[j - 1][i][1] / hl;
-          vl = x_ptr[j - 1][i][2] / hl;
+          PetscReal ul = x_ptr[j - 1][i][1] / hl;
+          PetscReal vl = x_ptr[j - 1][i][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 1. && b_ptr[j - 1][i][0] == 0.) {
-        hl = x_ptr[j - 1][i][0];
+        PetscReal hl = x_ptr[j - 1][i][0];
         if (hl < user->tiny_h) {
-          ul     = 0.;
-          vl     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ul = x_ptr[j - 1][i][1] / hl;
-          vl = x_ptr[j - 1][i][2] / hl;
+          PetscReal ul = x_ptr[j - 1][i][1] / hl;
+          PetscReal vl = x_ptr[j - 1][i][2] / hl;
+
+          PetscScalar a;
           solver(hl, hl, ul, ul, vl, -vl, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
       } else if (b_ptr[j][i][0] == 0. && b_ptr[j - 1][i][0] == 1.) {
-        hr = x_ptr[j][i][0];
+        PetscReal hr = x_ptr[j][i][0];
         if (hr < user->tiny_h) {
-          ur     = 0.;
-          vr     = 0.;
           gij[0] = 0.;
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
-          ur = x_ptr[j][i][1] / hr;
-          vr = x_ptr[j][i][2] / hr;
+          PetscReal ur = x_ptr[j][i][1] / hr;
+          PetscReal vr = x_ptr[j][i][2] / hr;
+
+          PetscScalar a;
           solver(hr, hr, ur, ur, -vr, vr, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
@@ -426,8 +411,10 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
         gij[1] = 0.;
         gij[2] = 0.;
       } else {
-        hl = x_ptr[j - 1][i][0];
-        hr = x_ptr[j][i][0];
+        PetscReal hl = x_ptr[j - 1][i][0];
+        PetscReal hr = x_ptr[j][i][0];
+        PetscReal ul, vl, ur, vr;
+
         if (hl < user->tiny_h) {
           ul = 0.;
           vl = 0.;
@@ -449,6 +436,7 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
           gij[1] = 0.;
           gij[2] = 0.;
         } else {
+          PetscScalar a;
           solver(hl, hr, ul, ur, vl, vr, sn, cn, gij, &a);
           amax = fmax(a, amax);
         }
@@ -465,51 +453,48 @@ PetscErrorCode fluxes(PetscScalar ***x_ptr, PetscScalar ***f_ptr, PetscScalar **
 
   PetscPrintf(self, "Time Step = %d, rank = %d, Courant Number = %f\n", tstep, user->rank, amax * user->dt * 2);
 
-  DMDAVecRestoreArrayDOF(da, localB, &b_ptr);
-  DMRestoreLocalVector(da, &localB);
+  PetscCall(DMDAVecRestoreArrayDOF(da, localB, &b_ptr));
+  PetscCall(DMRestoreLocalVector(da, &localB));
 
   PetscFunctionReturn(0);
 }
 
 PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, PetscReal vl, PetscReal vr, PetscReal sn, PetscReal cn,
                       PetscScalar *fij, PetscScalar *amax) {
-  // Local variables
-  PetscReal duml, dumr, cl, cr, hhat, uhat, vhat, chat, uperp, dh, du, dv;
-  PetscReal duperp, dW[3], al1, al3, ar1, ar3, R[3][3], da1, da3, a1, a2, a3;
-  PetscReal dupar, uperpl, uperpr, A[3][3], FL[3], FR[3];
-  PetscReal grav;
-  PetscInt  i, j;
-
-  grav = 9.806;
-
   PetscFunctionBeginUser;
 
+  PetscReal grav = 9.806;
+
   // Compute Roe averages
-  duml   = pow(hl, 0.5);
-  dumr   = pow(hr, 0.5);
-  cl     = pow(grav * hl, 0.5);
-  cr     = pow(grav * hr, 0.5);
-  hhat   = duml * dumr;
-  uhat   = (duml * ul + dumr * ur) / (duml + dumr);
-  vhat   = (duml * vl + dumr * vr) / (duml + dumr);
-  chat   = pow(0.5 * grav * (hl + hr), 0.5);
-  uperp  = uhat * cn + vhat * sn;
-  dh     = hr - hl;
-  du     = ur - ul;
-  dv     = vr - vl;
-  dupar  = -du * sn + dv * cn;
-  duperp = du * cn + dv * sn;
-  dW[0]  = 0.5 * (dh - hhat * duperp / chat);
-  dW[1]  = hhat * dupar;
-  dW[2]  = 0.5 * (dh + hhat * duperp / chat);
+  PetscReal duml  = pow(hl, 0.5);
+  PetscReal dumr  = pow(hr, 0.5);
+  PetscReal cl    = pow(grav * hl, 0.5);
+  PetscReal cr    = pow(grav * hr, 0.5);
+  PetscReal hhat  = duml * dumr;
+  PetscReal uhat  = (duml * ul + dumr * ur) / (duml + dumr);
+  PetscReal vhat  = (duml * vl + dumr * vr) / (duml + dumr);
+  PetscReal chat  = pow(0.5 * grav * (hl + hr), 0.5);
+  PetscReal uperp = uhat * cn + vhat * sn;
 
-  uperpl = ul * cn + vl * sn;
-  uperpr = ur * cn + vr * sn;
-  al1    = uperpl - cl;
-  al3    = uperpl + cl;
-  ar1    = uperpr - cr;
-  ar3    = uperpr + cr;
+  PetscReal dh     = hr - hl;
+  PetscReal du     = ur - ul;
+  PetscReal dv     = vr - vl;
+  PetscReal dupar  = -du * sn + dv * cn;
+  PetscReal duperp = du * cn + dv * sn;
 
+  PetscReal dW[3];
+  dW[0] = 0.5 * (dh - hhat * duperp / chat);
+  dW[1] = hhat * dupar;
+  dW[2] = 0.5 * (dh + hhat * duperp / chat);
+
+  PetscReal uperpl = ul * cn + vl * sn;
+  PetscReal uperpr = ur * cn + vr * sn;
+  PetscReal al1    = uperpl - cl;
+  PetscReal al3    = uperpl + cl;
+  PetscReal ar1    = uperpr - cr;
+  PetscReal ar3    = uperpr + cr;
+
+  PetscReal R[3][3];
   R[0][0] = 1.0;
   R[0][1] = 0.0;
   R[0][2] = 1.0;
@@ -520,11 +505,11 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   R[2][1] = cn;
   R[2][2] = vhat + chat * sn;
 
-  da1 = fmax(0.0, 2.0 * (ar1 - al1));
-  da3 = fmax(0.0, 2.0 * (ar3 - al3));
-  a1  = fabs(uperp - chat);
-  a2  = fabs(uperp);
-  a3  = fabs(uperp + chat);
+  PetscReal da1 = fmax(0.0, 2.0 * (ar1 - al1));
+  PetscReal da3 = fmax(0.0, 2.0 * (ar3 - al3));
+  PetscReal a1  = fabs(uperp - chat);
+  PetscReal a2  = fabs(uperp);
+  PetscReal a3  = fabs(uperp + chat);
 
   // Critical flow fix
   if (a1 < da1) {
@@ -535,8 +520,9 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   }
 
   // Compute interface flux
-  for (i = 0; i < 3; i++) {
-    for (j = 0; j < 3; j++) {
+  PetscReal A[3][3];
+  for (PetscInt i = 0; i < 3; i++) {
+    for (PetscInt j = 0; j < 3; j++) {
       A[i][j] = 0.0;
     }
   }
@@ -544,6 +530,7 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   A[1][1] = a2;
   A[2][2] = a3;
 
+  PetscReal FL[3], FR[3];
   FL[0] = uperpl * hl;
   FL[1] = ul * uperpl * hl + 0.5 * grav * hl * hl * cn;
   FL[2] = vl * uperpl * hl + 0.5 * grav * hl * hl * sn;
@@ -563,22 +550,14 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 }
 
 int main(int argc, char **argv) {
-  TS  ts;
-  Vec X, R;
-  // Mat               h; // water depth [m]
-  DM             da;
-  User           user;
   PetscErrorCode ierr;
-  PetscReal      max_time;
-  PetscBool      add_building;
-  PetscViewer    viewer;
-  // char              outputfile[80];
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize program and set problem parameters
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   PetscCall(PetscInitialize(&argc, &argv, (char *)0, help));
 
+  User user;
   PetscCall(PetscNew(&user));
   user->dt    = 0.04;
   user->Nt    = 180;
@@ -610,7 +589,7 @@ int main(int argc, char **argv) {
     PetscCall(PetscOptionsReal("-hu", "hu", "", user->hu, &user->hu, NULL));
     PetscCall(PetscOptionsReal("-hd", "hd", "", user->hd, &user->hd, NULL));
     PetscCall(PetscOptionsReal("-dt", "dt", "", user->dt, &user->dt, NULL));
-    PetscCall(PetscOptionsBool("-b", "Add buildings", "", add_building, &add_building, NULL));
+    PetscCall(PetscOptionsBool("-b", "Add buildings", "", user->add_building, &user->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", user->debug, &user->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", user->save, &user->save, NULL));
   }
@@ -618,17 +597,18 @@ int main(int argc, char **argv) {
   PetscCall(ierr);
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
-  max_time = user->Nt * user->dt;
+
+  PetscReal max_time = user->Nt * user->dt;
   PetscPrintf(user->comm, "Max simulation time is %f\n", max_time);
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize DMDA
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  DMDACreate2d(user->comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED, DMDA_STENCIL_BOX, user->Nx, user->Ny, PETSC_DECIDE, PETSC_DECIDE, user->dof, 1,
-               NULL, NULL, &user->da);
-  DMSetFromOptions(user->da);
-  DMSetUp(user->da);
-  DMDASetUniformCoordinates(user->da, 0.0, user->Nx * user->hx, 0.0, user->Ny * user->hy, 0.0, 0.0);
+  PetscCall(DMDACreate2d(user->comm, DM_BOUNDARY_GHOSTED, DM_BOUNDARY_GHOSTED, DMDA_STENCIL_BOX, user->Nx, user->Ny, PETSC_DECIDE, PETSC_DECIDE,
+                         user->dof, 1, NULL, NULL, &user->da));
+  PetscCall(DMSetFromOptions(user->da));
+  PetscCall(DMSetUp(user->da));
+  PetscCall(DMDASetUniformCoordinates(user->da, 0.0, user->Nx * user->hx, 0.0, user->Ny * user->hy, 0.0, 0.0));
 
   /*
   {
@@ -659,11 +639,12 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Extract global vectors from DMDA
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  DMCreateGlobalVector(user->da, &X);  // size = dof * number of cells
-  VecDuplicate(X, &user->F);
-  VecDuplicate(X, &user->G);
-  VecDuplicate(X, &user->B);
-  VecDuplicate(X, &R);
+  Vec X, R;
+  PetscCall(DMCreateGlobalVector(user->da, &X));  // size = dof * number of cells
+  PetscCall(VecDuplicate(X, &user->F));
+  PetscCall(VecDuplicate(X, &user->G));
+  PetscCall(VecDuplicate(X, &user->B));
+  PetscCall(VecDuplicate(X, &R));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initial Condition
@@ -672,16 +653,18 @@ int main(int argc, char **argv) {
   {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_IC.dat", user->Nx, user->Ny, user->dt);
-    PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer);
-    VecView(X, viewer);
-    PetscViewerDestroy(&viewer);
+
+    PetscViewer viewer;
+    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+    PetscCall(VecView(X, viewer));
+    PetscCall(PetscViewerDestroy(&viewer));
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Add buildings
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  if (add_building) {
-    Add_Buildings(user);
+  if (user->add_building) {
+    PetscCall(Add_Buildings(user));
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
@@ -692,32 +675,33 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create timestepping solver context
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  TSCreate(user->comm, &ts);
-  TSSetProblemType(ts, TS_NONLINEAR);
-  TSSetType(ts, TSEULER);
-  TSSetDM(ts, user->da);
-  TSSetRHSFunction(ts, R, RHSFunction, user);
-  TSSetMaxTime(ts, max_time);
-  TSSetExactFinalTime(ts, TS_EXACTFINALTIME_STEPOVER);
-  TSSetSolution(ts, X);
-  TSSetTimeStep(ts, user->dt);
+  TS ts;
+  PetscCall(TSCreate(user->comm, &ts));
+  PetscCall(TSSetProblemType(ts, TS_NONLINEAR));
+  PetscCall(TSSetType(ts, TSEULER));
+  PetscCall(TSSetDM(ts, user->da));
+  PetscCall(TSSetRHSFunction(ts, R, RHSFunction, user));
+  PetscCall(TSSetMaxTime(ts, max_time));
+  PetscCall(TSSetExactFinalTime(ts, TS_EXACTFINALTIME_STEPOVER));
+  PetscCall(TSSetSolution(ts, X));
+  PetscCall(TSSetTimeStep(ts, user->dt));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Sets various TS parameters from user options
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  TSSetFromOptions(ts);
+  PetscCall(TSSetFromOptions(ts));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Solver nonlinear system
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  TSSolve(ts, X);
+  PetscCall(TSSolve(ts, X));
 
-  VecDestroy(&X);
-  VecDestroy(&R);
-  VecDestroy(&user->F);
-  VecDestroy(&user->G);
-  VecDestroy(&user->B);
-  DMDestroy(&da);
+  PetscCall(VecDestroy(&X));
+  PetscCall(VecDestroy(&R));
+  PetscCall(VecDestroy(&user->F));
+  PetscCall(VecDestroy(&user->G));
+  PetscCall(VecDestroy(&user->B));
   PetscCall(PetscFinalize());
+
   return 0;
 }
