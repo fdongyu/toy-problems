@@ -14,7 +14,7 @@ struct _n_User {
   MPI_Comm  comm;
   DM        da;
   PetscInt  Nt, Nx, Ny;
-  PetscReal dt, hx, hy;
+  PetscReal Lx, Ly, dt, dx, dy;
   PetscReal hu, hd;
   PetscReal tiny_h;
   PetscInt  dof, rank, size;
@@ -95,13 +95,10 @@ PetscErrorCode Add_Buildings(User user) {
   PetscFunctionBeginUser;
 
   DM        da = user->da;
-  PetscReal hx = user->hx;
-  PetscReal hy = user->hy;
-
-  PetscReal bu = 30 / hx;
-  PetscReal bd = 105 / hx;
-  PetscReal bl = 95 / hy;
-  PetscReal br = 105 / hy;
+  PetscReal bu = 30  / user->dx;
+  PetscReal bd = 105 / user->dx;
+  PetscReal bl = 95  / user->dy;
+  PetscReal br = 105 / user->dy;
 
   PetscScalar ***b_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
@@ -570,10 +567,10 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(user->comm, &user->rank);
   PetscPrintf(user->comm, "Running on %d processors! \n", user->size);
   /*Default number of cells (box), cellsize in x-direction, and y-direction */
-  user->Nx     = 200;
-  user->Ny     = 200;
-  user->hx     = 1.0;
-  user->hy     = 1.0;
+  user->Lx     = 200;
+  user->Ly     = 200;
+  user->dx     = 1.0;
+  user->dy     = 1.0;
   user->hu     = 10.0;  // water depth for the upstream of dam   [m]
   user->hd     = 5.0;   // water depth for the downstream of dam [m]
   user->tiny_h = 1e-7;
@@ -581,11 +578,11 @@ int main(int argc, char **argv) {
   ierr = PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   PetscCall(ierr);
   {
-    PetscCall(PetscOptionsInt("-Nx", "Number of cells in X", "", user->Nx, &user->Nx, NULL));
-    PetscCall(PetscOptionsInt("-Ny", "Number of cells in Y", "", user->Ny, &user->Ny, NULL));
     PetscCall(PetscOptionsInt("-Nt", "Number of time steps", "", user->Nt, &user->Nt, NULL));
-    PetscCall(PetscOptionsReal("-hx", "dx", "", user->hx, &user->hx, NULL));
-    PetscCall(PetscOptionsReal("-hy", "dy", "", user->hy, &user->hy, NULL));
+    PetscCall(PetscOptionsReal("-Lx", "Length in X", "", user->Lx, &user->Lx, NULL));
+    PetscCall(PetscOptionsReal("-Ly", "Length in Y", "", user->Ly, &user->Ly, NULL));
+    PetscCall(PetscOptionsReal("-dx", "dx", "", user->dx, &user->dx, NULL));
+    PetscCall(PetscOptionsReal("-dy", "dy", "", user->dy, &user->dy, NULL));
     PetscCall(PetscOptionsReal("-hu", "hu", "", user->hu, &user->hu, NULL));
     PetscCall(PetscOptionsReal("-hd", "hd", "", user->hd, &user->hd, NULL));
     PetscCall(PetscOptionsReal("-dt", "dt", "", user->dt, &user->dt, NULL));
@@ -598,6 +595,8 @@ int main(int argc, char **argv) {
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
+  user->Nx     = user->Lx / user->dx;
+  user->Ny     = user->Ly / user->dy;
   PetscReal max_time = user->Nt * user->dt;
   PetscPrintf(user->comm, "Max simulation time is %f\n", max_time);
 
@@ -608,7 +607,7 @@ int main(int argc, char **argv) {
                          user->dof, 1, NULL, NULL, &user->da));
   PetscCall(DMSetFromOptions(user->da));
   PetscCall(DMSetUp(user->da));
-  PetscCall(DMDASetUniformCoordinates(user->da, 0.0, user->Nx * user->hx, 0.0, user->Ny * user->hy, 0.0, 0.0));
+  PetscCall(DMDASetUniformCoordinates(user->da, 0.0, user->Lx, 0.0, user->Ly, 0.0, 0.0));
 
   /*
   {
