@@ -16,7 +16,7 @@ struct _n_User {
   PetscInt  Nt, Nx, Ny;
   PetscReal Lx, Ly, dt, dx, dy;
   PetscReal hu, hd;
-  PetscReal tiny_h;
+  PetscReal max_time, tiny_h;
   PetscInt  dof, rank, size;
   Vec       F, G, B;
   Vec       subdomain;
@@ -72,7 +72,7 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
   PetscCall(VecZeroEntries(X));
   for (PetscInt j = ys; j < ys + ym; j = j + 1) {
     for (PetscInt i = xs; i < xs + xm; i = i + 1) {
-      if (j < 95) {
+      if (j < 95/user->dy) {
         x_ptr[j][i][0] = user->hu;
       } else {
         x_ptr[j][i][0] = user->hd;
@@ -147,6 +147,9 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   User user = (User)ptr;
 
   DM        da   = user->da;
+  PetscReal dx   = user->dx;
+  PetscReal dy   = user->dy;
+  PetscReal area = dx * dy;
   PetscBool save = user->save;
 
   user->tstep = user->tstep + 1;
@@ -185,7 +188,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
     for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
       for (PetscInt k = 0; k < user->dof; k = k + 1) {
-        f_ptr1[j][i][k] = -(f_ptr[j][i + 1][k] - f_ptr[j][i][k] + g_ptr[j + 1][i][k] - g_ptr[j][i][k]);
+        f_ptr1[j][i][k] = -(f_ptr[j][i+1][k]*dx - f_ptr[j][i][k]*dx + g_ptr[j+1][i][k]*dy - g_ptr[j][i][k]*dy)/area;
       }
     }
   }
@@ -556,12 +559,12 @@ int main(int argc, char **argv) {
 
   User user;
   PetscCall(PetscNew(&user));
-  user->dt    = 0.04;
-  user->Nt    = 180;
-  user->dof   = 3;  // h, uh, vh
-  user->comm  = PETSC_COMM_WORLD;
-  user->debug = PETSC_FALSE;
-  user->debug = PETSC_FALSE;
+  user->dt       = 0.04;
+  user->max_time = 7.2; 
+  user->dof      = 3;  // h, uh, vh
+  user->comm     = PETSC_COMM_WORLD;
+  user->debug    = PETSC_FALSE;
+  user->debug    = PETSC_FALSE;
 
   MPI_Comm_size(user->comm, &user->size);
   MPI_Comm_rank(user->comm, &user->rank);
@@ -578,7 +581,7 @@ int main(int argc, char **argv) {
   ierr = PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   PetscCall(ierr);
   {
-    PetscCall(PetscOptionsInt("-Nt", "Number of time steps", "", user->Nt, &user->Nt, NULL));
+    PetscCall(PetscOptionsReal("-t", "simulation time", "", user->max_time, &user->max_time, NULL));
     PetscCall(PetscOptionsReal("-Lx", "Length in X", "", user->Lx, &user->Lx, NULL));
     PetscCall(PetscOptionsReal("-Ly", "Length in Y", "", user->Ly, &user->Ly, NULL));
     PetscCall(PetscOptionsReal("-dx", "dx", "", user->dx, &user->dx, NULL));
@@ -595,10 +598,10 @@ int main(int argc, char **argv) {
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
-  user->Nx     = user->Lx / user->dx;
-  user->Ny     = user->Ly / user->dy;
-  PetscReal max_time = user->Nt * user->dt;
-  PetscPrintf(user->comm, "Max simulation time is %f\n", max_time);
+  user->Nx = user->Lx / user->dx;
+  user->Ny = user->Ly / user->dy;
+  user->Nt = user->max_time / user->dt;
+  PetscPrintf(user->comm, "Max simulation time is %f\n", user->max_time);
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize DMDA
@@ -680,7 +683,7 @@ int main(int argc, char **argv) {
   PetscCall(TSSetType(ts, TSEULER));
   PetscCall(TSSetDM(ts, user->da));
   PetscCall(TSSetRHSFunction(ts, R, RHSFunction, user));
-  PetscCall(TSSetMaxTime(ts, max_time));
+  PetscCall(TSSetMaxTime(ts, user->max_time));
   PetscCall(TSSetExactFinalTime(ts, TS_EXACTFINALTIME_STEPOVER));
   PetscCall(TSSetSolution(ts, X));
   PetscCall(TSSetTimeStep(ts, user->dt));

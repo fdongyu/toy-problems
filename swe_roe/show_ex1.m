@@ -3,6 +3,8 @@ clear;close all;clc
 % User need to provide petsc directory
 addpath('/Users/xudo627/developments/petsc/share/petsc/matlab/');
 
+Lx = 200; % [m]
+Ly = 200; % [m]
 Nt  = length(dir('outputs/ex1*.dat')) - 1;
 dof = 3;
 
@@ -22,8 +24,11 @@ for i = 1 : length(strs)
         dt = str2num(strs{i+1});
     end
 end
-x = 1 : Nx;
-y = 1 : Ny;
+
+dx = Lx / Nx;
+dy = Ly / Ny;
+x = dx : dx : Lx;
+y = dy : dy : Ly;
 [x,y] = meshgrid(x,y);
 
 % Show Initial Condition
@@ -36,8 +41,8 @@ title('Initial Condition','FontSize',15,'FontWeight','bold');
 
 % Animation of DAM break
 imAlpha = ones(size(h0));
-imAlpha(1:30,96:105) = 0;
-imAlpha(106:200,96:105) = 0;
+imAlpha(1:30/dx,95/dy+1:105/dy) = 0;
+imAlpha(105/dy+1:200/dy,95/dy+1:105/dy) = 0;
 for i = 1 : Nt
     file  = dir(['outputs/ex1_*_' num2str(i) '.dat']);
     data  = PetscBinaryRead(fullfile(file(1).folder,file(1).name));
@@ -50,12 +55,12 @@ for i = 1 : Nt
     title(['t = ' num2str(i*dt) 's'],'FontSize',15);
 end
 
-h(1:31,95:106)    = NaN;
-h(105:200,95:106) = NaN;
-u(1:31,95:106)    = 0;
-u(105:200,95:106) = 0;
-v(1:31,95:106)    = 0;
-v(105:200,95:106) = 0;
+h(1:30/dx+1,95/dy:105/dy+1)     = NaN;
+h(105/dx:200/dy,95/dy:105/dy+1) = NaN;
+u(1:30/dx+1,95/dy:105/dy+1)     = 0;
+u(105/dx:200/dx,95/dy:105/dy+1) = 0;
+v(1:30/dx+1,95/dy:105/dy+1)     = 0;
+v(105/dx:200/dx,95/dy:105/dy+1) = 0;
 
 % Water depth and velocity at last time step
 figure; set(gcf,'Position',[10 10 1200 500]);
