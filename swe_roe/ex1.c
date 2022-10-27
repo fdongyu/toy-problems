@@ -550,7 +550,6 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 }
 
 int main(int argc, char **argv) {
-  PetscErrorCode ierr;
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize program and set problem parameters
@@ -578,8 +577,7 @@ int main(int argc, char **argv) {
   user->hd     = 5.0;   // water depth for the downstream of dam [m]
   user->tiny_h = 1e-7;
 
-  ierr = PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
-  PetscCall(ierr);
+  PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   {
     PetscCall(PetscOptionsReal("-t", "simulation time", "", user->max_time, &user->max_time, NULL));
     PetscCall(PetscOptionsReal("-Lx", "Length in X", "", user->Lx, &user->Lx, NULL));
@@ -593,8 +591,7 @@ int main(int argc, char **argv) {
     PetscCall(PetscOptionsBool("-debug", "debug", "", user->debug, &user->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", user->save, &user->save, NULL));
   }
-  ierr = PetscOptionsEnd();
-  PetscCall(ierr);
+  PetscOptionsEnd();
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
