@@ -563,8 +563,7 @@ int main(int argc, char **argv) {
   user->dof      = 3;  // h, uh, vh
   user->comm     = PETSC_COMM_WORLD;
   user->debug    = PETSC_FALSE;
-  user->save     = 0; // save = 1: save outputs for each time step
-                      // save = 2: save outputs at last time step
+  user->save     = 0; // save = 1: save outputs for each time step; save = 2: save outputs at last time step
 
   MPI_Comm_size(user->comm, &user->size);
   MPI_Comm_rank(user->comm, &user->rank);
