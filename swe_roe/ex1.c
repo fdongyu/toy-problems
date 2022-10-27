@@ -95,10 +95,10 @@ PetscErrorCode Add_Buildings(User user) {
   PetscFunctionBeginUser;
 
   DM        da = user->da;
-  PetscReal bu = 30  / user->dx;
-  PetscReal bd = 105 / user->dx;
-  PetscReal bl = 95  / user->dy;
-  PetscReal br = 105 / user->dy;
+  PetscInt bu = 30  / user->dx;
+  PetscInt bd = 105 / user->dx;
+  PetscInt bl = 95  / user->dy;
+  PetscInt br = 105 / user->dy;
 
   PetscScalar ***b_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
