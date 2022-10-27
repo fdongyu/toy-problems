@@ -72,7 +72,7 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
   PetscCall(VecZeroEntries(X));
   for (PetscInt j = ys; j < ys + ym; j = j + 1) {
     for (PetscInt i = xs; i < xs + xm; i = i + 1) {
-      if (j < 95/user->dy) {
+      if (j < 95 / user->dy) {
         x_ptr[j][i][0] = user->hu;
       } else {
         x_ptr[j][i][0] = user->hd;
@@ -94,10 +94,10 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 PetscErrorCode Add_Buildings(User user) {
   PetscFunctionBeginUser;
 
-  DM        da = user->da;
-  PetscInt bu = 30  / user->dx;
+  DM       da = user->da;
+  PetscInt bu = 30 / user->dx;
   PetscInt bd = 105 / user->dx;
-  PetscInt bl = 95  / user->dy;
+  PetscInt bl = 95 / user->dy;
   PetscInt br = 105 / user->dy;
 
   PetscScalar ***b_ptr;
@@ -188,7 +188,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
     for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
       for (PetscInt k = 0; k < user->dof; k = k + 1) {
-        f_ptr1[j][i][k] = -(f_ptr[j][i+1][k]*dx - f_ptr[j][i][k]*dx + g_ptr[j+1][i][k]*dy - g_ptr[j][i][k]*dy)/area;
+        f_ptr1[j][i][k] = -(f_ptr[j][i + 1][k] * dx - f_ptr[j][i][k] * dx + g_ptr[j + 1][i][k] * dy - g_ptr[j][i][k] * dy) / area;
       }
     }
   }
@@ -550,7 +550,6 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 }
 
 int main(int argc, char **argv) {
-
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize program and set problem parameters
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
@@ -559,11 +558,11 @@ int main(int argc, char **argv) {
   User user;
   PetscCall(PetscNew(&user));
   user->dt       = 0.04;
-  user->max_time = 7.2; 
+  user->max_time = 7.2;
   user->dof      = 3;  // h, uh, vh
   user->comm     = PETSC_COMM_WORLD;
   user->debug    = PETSC_FALSE;
-  user->save     = 0; // save = 1: save outputs for each time step; save = 2: save outputs at last time step
+  user->save     = 0;  // save = 1: save outputs for each time step; save = 2: save outputs at last time step
 
   MPI_Comm_size(user->comm, &user->size);
   MPI_Comm_rank(user->comm, &user->rank);
