@@ -22,8 +22,8 @@ struct _n_User {
   Vec       subdomain;
   PetscInt  xs, ys, xm, ym, xe, ye;
   PetscInt  gxs, gxm, gys, gym, gxe, gye;
-  PetscBool debug, save, add_building;
-  PetscInt  tstep;
+  PetscBool debug, add_building;
+  PetscInt  save, tstep;
 };
 
 extern PetscErrorCode RHSFunction(TS, PetscReal, Vec, Vec, void *);
@@ -150,7 +150,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscReal dx   = user->dx;
   PetscReal dy   = user->dy;
   PetscReal area = dx * dy;
-  PetscBool save = user->save;
+  PetscInt  save = user->save;
 
   user->tstep = user->tstep + 1;
 
@@ -203,7 +203,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(DMRestoreLocalVector(da, &localF));
   PetscCall(DMRestoreLocalVector(da, &localG));
 
-  if (save) {
+  if (save == 1) {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
 
@@ -563,7 +563,8 @@ int main(int argc, char **argv) {
   user->dof      = 3;  // h, uh, vh
   user->comm     = PETSC_COMM_WORLD;
   user->debug    = PETSC_FALSE;
-  user->debug    = PETSC_FALSE;
+  user->save     = 0; // save = 1: save outputs for each time step
+                      // save = 2: save outputs at last time step
 
   MPI_Comm_size(user->comm, &user->size);
   MPI_Comm_rank(user->comm, &user->rank);
@@ -589,7 +590,7 @@ int main(int argc, char **argv) {
     PetscCall(PetscOptionsReal("-dt", "dt", "", user->dt, &user->dt, NULL));
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", user->add_building, &user->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", user->debug, &user->debug, NULL));
-    PetscCall(PetscOptionsBool("-save", "save outputs", "", user->save, &user->save, NULL));
+    PetscCall(PetscOptionsInt("-save", "save outputs", "", user->save, &user->save, NULL));
   }
   PetscOptionsEnd();
   assert(user->hu >= 0.);
@@ -653,10 +654,12 @@ int main(int argc, char **argv) {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_IC.dat", user->Nx, user->Ny, user->dt);
 
-    PetscViewer viewer;
-    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
-    PetscCall(VecView(X, viewer));
-    PetscCall(PetscViewerDestroy(&viewer));
+    if (user->save > 0) {
+      PetscViewer viewer;
+      PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+      PetscCall(VecView(X, viewer));
+      PetscCall(PetscViewerDestroy(&viewer));
+    }
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
@@ -694,6 +697,16 @@ int main(int argc, char **argv) {
    *  Solver nonlinear system
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   PetscCall(TSSolve(ts, X));
+
+  if (user->save == 2) {
+    char fname[PETSC_MAX_PATH_LEN];
+    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->Nt);
+
+    PetscViewer viewer;
+    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+    PetscCall(VecView(X, viewer));
+    PetscCall(PetscViewerDestroy(&viewer));
+  }
 
   PetscCall(VecDestroy(&X));
   PetscCall(VecDestroy(&R));
