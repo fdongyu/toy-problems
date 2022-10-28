@@ -1,12 +1,15 @@
 clear;close all;clc
 
 % Run several simulations before runing the following scripts
-% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 10 -dy 10 -dt 0.005
-% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 2 -dy 2 -dt 0.005
-% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 1 -dy 1 -dt 0.005
-% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.5 -dy 0.5 -dt 0.005
-% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.2 -dy 0.2 -dt 0.005
-% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.1 -dy 0.1 -dt 0.005 <-- assuming this is exact solution
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 10 -dy 10 -dt 0.0005
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 2 -dy 2 -dt 0.0005
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 1 -dy 1 -dt 0.0005
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.5 -dy 0.5 -dt 0.0005
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.2 -dy 0.2 -dt 0.0005
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.1 -dy 0.1 -dt 0.0005
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.05 -dy 0.05 -dt 0.0005
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.02 -dy 0.02 -dt 0.0005<-- assuming this is exact solution
+% mpiexec -n 40 ./ex1 -hd 5.0 -save 2 -b -dx 0.01 -dy 0.01 -dt 0.0005<-- unstable, smaller time step is needed, but too expensive
 
 % User need to provide petsc directory
 addpath('/Users/xudo627/developments/petsc/share/petsc/matlab/');
@@ -14,7 +17,7 @@ Lx = 200; % [m]
 Ly = 200; % [m]
 dof = 3;
 
-filename = 'outputs/ex1_Nx_2000_Ny_2000_dt_0.005000_1440.dat';
+filename = 'outputs/ex1_Nx_10000_Ny_10000_dt_0.000500_14400.dat';
 data = PetscBinaryRead(filename);
 strs = strsplit(filename,'_');
 for i = 1 : length(strs)
@@ -35,24 +38,36 @@ vexact = reshape(data(1,:),[Nx Ny]);
 
 imagesc(hexact); colorbar; caxis([0 10]); colormap(jet);
 
-Nxexact = 2000;
+Nxexact = 10000;
 
 dx     = [];
-err_L1  = NaN(5,3);
-err_L2  = NaN(5,3);
-err_Max = NaN(5,3);
+Nxs    = [20 40 100 200 400 1000 2000];
+err_L1  = NaN(length(Nxs),3);
+err_L2  = NaN(length(Nxs),3);
+err_Max = NaN(length(Nxs),3);
 
 k = 1;
-for Nx = [20 100 200 400 1000]
+for Nx = Nxs
     disp(['Nx = ' num2str(Nx)]);
     Ny = Nx;
     dx = [dx; Lx/Nx];
-    filename = ['outputs/ex1_Nx_' num2str(Nx) '_Ny_' num2str(Ny) '_dt_0.005000_1440.dat'];
+    
+    bu = 30  / dx(k);
+    bd = 105 / dx(k);
+    bl = 95  / dx(k);
+    br = 105 / dx(k);
+    ii = 1 : Nx; jj = 1 : Ny;
+  
+    filename = ['outputs/ex1_Nx_' num2str(Nx) '_Ny_' num2str(Ny) '_dt_0.000500_14400.dat'];
     data = PetscBinaryRead(filename);
     data = reshape(data,  [dof, length(data)/dof]);
     h    = reshape(data(1,:),[Nx Ny]);
     u    = reshape(data(1,:),[Nx Ny]);
     v    = reshape(data(1,:),[Nx Ny]);
+    h(ii <= bu & jj < br) = NaN; h(ii > bd & jj > bl) = NaN; 
+    u(ii <= bu & jj < br) = NaN; u(ii > bd & jj > bl) = NaN; 
+    v(ii <= bu & jj < br) = NaN; v(ii > bd & jj > bl) = NaN; 
+    
     scale_factor = Nxexact / Nx;
     hexact_tmp = convert_res(hexact,1,scale_factor) ./ scale_factor^2;
     uexact_tmp = convert_res(uexact,1,scale_factor) ./ scale_factor^2;
@@ -66,8 +81,8 @@ for Nx = [20 100 200 400 1000]
         elseif i == 3
             err = abs(v.*h - vexact_tmp.*hexact_tmp);
         end
-        err_L1(k,i)  = sum(abs(err(:)))/(Nx*Ny);
-        err_L2(k,i)  = sqrt(sum(err(:).^2)/(Nx*Ny));
+        err_L1(k,i)  = nansum(abs(err(:)))/(Nx*Ny);
+        err_L2(k,i)  = sqrt(nansum(err(:).^2)/(Nx*Ny));
         err_Max(k,i) = max(abs(err(:)));
     end
     
