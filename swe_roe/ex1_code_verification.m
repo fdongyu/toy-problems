@@ -52,10 +52,10 @@ for Nx = Nxs
     Ny = Nx;
     dx = [dx; Lx/Nx];
     
-    bu = 30  / dx(k);
-    bd = 105 / dx(k);
-    bl = 95  / dx(k);
-    br = 105 / dx(k);
+    bu = 29  / dx(k);
+    bd = 104 / dx(k);
+    bl = 94  / dx(k);
+    br = 106 / dx(k);
     ii = 1 : Nx; jj = 1 : Ny;
   
     filename = ['outputs/ex1_Nx_' num2str(Nx) '_Ny_' num2str(Ny) '_dt_0.000500_14400.dat'];
@@ -64,22 +64,26 @@ for Nx = Nxs
     h    = reshape(data(1,:),[Nx Ny]);
     u    = reshape(data(1,:),[Nx Ny]);
     v    = reshape(data(1,:),[Nx Ny]);
-    h(ii <= bu & jj < br) = NaN; h(ii > bd & jj > bl) = NaN; 
-    u(ii <= bu & jj < br) = NaN; u(ii > bd & jj > bl) = NaN; 
-    v(ii <= bu & jj < br) = NaN; v(ii > bd & jj > bl) = NaN; 
+
+    h(ii <= bu,jj < br & jj > bl) = NaN;
+    h(ii > bd ,jj < br & jj > bl) = NaN;
+    u(ii <= bu,jj < br & jj > bl) = NaN;
+    u(ii > bd ,jj < br & jj > bl) = NaN;
+    v(ii <= bu,jj < br & jj > bl) = NaN;
+    v(ii > bd ,jj < br & jj > bl) = NaN;
     
     scale_factor = Nxexact / Nx;
-    hexact_tmp = convert_res(hexact,1,scale_factor) ./ scale_factor^2;
-    uexact_tmp = convert_res(uexact,1,scale_factor) ./ scale_factor^2;
-    vexact_tmp = convert_res(vexact,1,scale_factor) ./ scale_factor^2;
+    hexact_tmp  = convert_res(hexact,1,scale_factor) ./ scale_factor^2;
+    uhexact_tmp = convert_res(uexact.*hexact,1,scale_factor) ./ scale_factor^2;
+    vhexact_tmp = convert_res(vexact.*hexact,1,scale_factor) ./ scale_factor^2;
     
     for i = 1 : 3
         if i == 1
             err = abs(h - hexact_tmp);
         elseif i == 2
-            err = abs(u.*h - uexact_tmp.*hexact_tmp);
+            err = abs(u.*h - uhexact_tmp);
         elseif i == 3
-            err = abs(v.*h - vexact_tmp.*hexact_tmp);
+            err = abs(v.*h - vhexact_tmp);
         end
         err_L1(k,i)  = nansum(abs(err(:)))/(Nx*Ny);
         err_L2(k,i)  = sqrt(nansum(err(:).^2)/(Nx*Ny));
@@ -94,10 +98,10 @@ varnames = {'h','uh','vh'};
 for i = 1 : 3
     subplot(1,3,i);
     loglog(dx, err_L1(:,i) ,'bo-','LineWidth',2); hold on; grid on;
-    loglog(dx, err_L2(:,i) ,'g*-','LineWidth',2); 
-    loglog(dx, err_Max(:,i),'rx-','LineWidth',2); 
+    loglog(dx, err_L2(:,i) ,'g*-','LineWidth',2);
+    loglog(dx, err_Max(:,i),'rx-','LineWidth',2);
     ydum = ylim;
-    loglog([dx(end-1) dx(1)], ydum(1).*[1, dx(1)/dx(end-1)],'k--','LineWidth',2);
+    loglog([dx(end) dx(1)], ydum(1).*[1, dx(1)/dx(end)],'k--','LineWidth',2);
     title(varnames{i},'FontSize',15,'FontWeight','bold');
     if i == 1
         leg = legend('1-norm','2-norm','max-norm','first order');
