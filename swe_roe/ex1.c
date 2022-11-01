@@ -14,16 +14,16 @@ struct _n_User {
   MPI_Comm  comm;
   DM        da;
   PetscInt  Nt, Nx, Ny;
-  PetscReal dt, hx, hy;
+  PetscReal Lx, Ly, dt, dx, dy;
   PetscReal hu, hd;
-  PetscReal tiny_h;
+  PetscReal max_time, tiny_h;
   PetscInt  dof, rank, size;
   Vec       F, G, B;
   Vec       subdomain;
   PetscInt  xs, ys, xm, ym, xe, ye;
   PetscInt  gxs, gxm, gys, gym, gxe, gye;
-  PetscBool debug, save, add_building;
-  PetscInt  tstep;
+  PetscBool debug, add_building;
+  PetscInt  save, tstep;
 };
 
 extern PetscErrorCode RHSFunction(TS, PetscReal, Vec, Vec, void *);
@@ -72,7 +72,7 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
   PetscCall(VecZeroEntries(X));
   for (PetscInt j = ys; j < ys + ym; j = j + 1) {
     for (PetscInt i = xs; i < xs + xm; i = i + 1) {
-      if (j < 95) {
+      if (j < 95 / user->dy) {
         x_ptr[j][i][0] = user->hu;
       } else {
         x_ptr[j][i][0] = user->hd;
@@ -94,14 +94,11 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 PetscErrorCode Add_Buildings(User user) {
   PetscFunctionBeginUser;
 
-  DM        da = user->da;
-  PetscReal hx = user->hx;
-  PetscReal hy = user->hy;
-
-  PetscReal bu = 30 / hx;
-  PetscReal bd = 105 / hx;
-  PetscReal bl = 95 / hy;
-  PetscReal br = 105 / hy;
+  DM       da = user->da;
+  PetscInt bu = 30 / user->dx;
+  PetscInt bd = 105 / user->dx;
+  PetscInt bl = 95 / user->dy;
+  PetscInt br = 105 / user->dy;
 
   PetscScalar ***b_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
@@ -150,7 +147,10 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   User user = (User)ptr;
 
   DM        da   = user->da;
-  PetscBool save = user->save;
+  PetscReal dx   = user->dx;
+  PetscReal dy   = user->dy;
+  PetscReal area = dx * dy;
+  PetscInt  save = user->save;
 
   user->tstep = user->tstep + 1;
 
@@ -188,7 +188,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
     for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
       for (PetscInt k = 0; k < user->dof; k = k + 1) {
-        f_ptr1[j][i][k] = -(f_ptr[j][i + 1][k] - f_ptr[j][i][k] + g_ptr[j + 1][i][k] - g_ptr[j][i][k]);
+        f_ptr1[j][i][k] = -(f_ptr[j][i + 1][k] * dx - f_ptr[j][i][k] * dx + g_ptr[j + 1][i][k] * dy - g_ptr[j][i][k] * dy) / area;
       }
     }
   }
@@ -203,7 +203,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(DMRestoreLocalVector(da, &localF));
   PetscCall(DMRestoreLocalVector(da, &localG));
 
-  if (save) {
+  if (save == 1) {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
 
@@ -550,8 +550,6 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 }
 
 int main(int argc, char **argv) {
-  PetscErrorCode ierr;
-
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize program and set problem parameters
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
@@ -559,47 +557,47 @@ int main(int argc, char **argv) {
 
   User user;
   PetscCall(PetscNew(&user));
-  user->dt    = 0.04;
-  user->Nt    = 180;
-  user->dof   = 3;  // h, uh, vh
-  user->comm  = PETSC_COMM_WORLD;
-  user->debug = PETSC_FALSE;
-  user->debug = PETSC_FALSE;
+  user->dt       = 0.04;
+  user->max_time = 7.2;
+  user->dof      = 3;  // h, uh, vh
+  user->comm     = PETSC_COMM_WORLD;
+  user->debug    = PETSC_FALSE;
+  user->save     = 0;  // save = 1: save outputs for each time step; save = 2: save outputs at last time step
 
   MPI_Comm_size(user->comm, &user->size);
   MPI_Comm_rank(user->comm, &user->rank);
   PetscPrintf(user->comm, "Running on %d processors! \n", user->size);
   /*Default number of cells (box), cellsize in x-direction, and y-direction */
-  user->Nx     = 200;
-  user->Ny     = 200;
-  user->hx     = 1.0;
-  user->hy     = 1.0;
+  user->Lx     = 200;
+  user->Ly     = 200;
+  user->dx     = 1.0;
+  user->dy     = 1.0;
   user->hu     = 10.0;  // water depth for the upstream of dam   [m]
   user->hd     = 5.0;   // water depth for the downstream of dam [m]
   user->tiny_h = 1e-7;
 
-  ierr = PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
-  PetscCall(ierr);
+  PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   {
-    PetscCall(PetscOptionsInt("-Nx", "Number of cells in X", "", user->Nx, &user->Nx, NULL));
-    PetscCall(PetscOptionsInt("-Ny", "Number of cells in Y", "", user->Ny, &user->Ny, NULL));
-    PetscCall(PetscOptionsInt("-Nt", "Number of time steps", "", user->Nt, &user->Nt, NULL));
-    PetscCall(PetscOptionsReal("-hx", "dx", "", user->hx, &user->hx, NULL));
-    PetscCall(PetscOptionsReal("-hy", "dy", "", user->hy, &user->hy, NULL));
+    PetscCall(PetscOptionsReal("-t", "simulation time", "", user->max_time, &user->max_time, NULL));
+    PetscCall(PetscOptionsReal("-Lx", "Length in X", "", user->Lx, &user->Lx, NULL));
+    PetscCall(PetscOptionsReal("-Ly", "Length in Y", "", user->Ly, &user->Ly, NULL));
+    PetscCall(PetscOptionsReal("-dx", "dx", "", user->dx, &user->dx, NULL));
+    PetscCall(PetscOptionsReal("-dy", "dy", "", user->dy, &user->dy, NULL));
     PetscCall(PetscOptionsReal("-hu", "hu", "", user->hu, &user->hu, NULL));
     PetscCall(PetscOptionsReal("-hd", "hd", "", user->hd, &user->hd, NULL));
     PetscCall(PetscOptionsReal("-dt", "dt", "", user->dt, &user->dt, NULL));
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", user->add_building, &user->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", user->debug, &user->debug, NULL));
-    PetscCall(PetscOptionsBool("-save", "save outputs", "", user->save, &user->save, NULL));
+    PetscCall(PetscOptionsInt("-save", "save outputs", "", user->save, &user->save, NULL));
   }
-  ierr = PetscOptionsEnd();
-  PetscCall(ierr);
+  PetscOptionsEnd();
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
-  PetscReal max_time = user->Nt * user->dt;
-  PetscPrintf(user->comm, "Max simulation time is %f\n", max_time);
+  user->Nx = user->Lx / user->dx;
+  user->Ny = user->Ly / user->dy;
+  user->Nt = user->max_time / user->dt;
+  PetscPrintf(user->comm, "Max simulation time is %f\n", user->max_time);
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize DMDA
@@ -608,7 +606,7 @@ int main(int argc, char **argv) {
                          user->dof, 1, NULL, NULL, &user->da));
   PetscCall(DMSetFromOptions(user->da));
   PetscCall(DMSetUp(user->da));
-  PetscCall(DMDASetUniformCoordinates(user->da, 0.0, user->Nx * user->hx, 0.0, user->Ny * user->hy, 0.0, 0.0));
+  PetscCall(DMDASetUniformCoordinates(user->da, 0.0, user->Lx, 0.0, user->Ly, 0.0, 0.0));
 
   /*
   {
@@ -654,10 +652,12 @@ int main(int argc, char **argv) {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_IC.dat", user->Nx, user->Ny, user->dt);
 
-    PetscViewer viewer;
-    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
-    PetscCall(VecView(X, viewer));
-    PetscCall(PetscViewerDestroy(&viewer));
+    if (user->save > 0) {
+      PetscViewer viewer;
+      PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+      PetscCall(VecView(X, viewer));
+      PetscCall(PetscViewerDestroy(&viewer));
+    }
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
@@ -681,7 +681,7 @@ int main(int argc, char **argv) {
   PetscCall(TSSetType(ts, TSEULER));
   PetscCall(TSSetDM(ts, user->da));
   PetscCall(TSSetRHSFunction(ts, R, RHSFunction, user));
-  PetscCall(TSSetMaxTime(ts, max_time));
+  PetscCall(TSSetMaxTime(ts, user->max_time));
   PetscCall(TSSetExactFinalTime(ts, TS_EXACTFINALTIME_STEPOVER));
   PetscCall(TSSetSolution(ts, X));
   PetscCall(TSSetTimeStep(ts, user->dt));
@@ -695,6 +695,16 @@ int main(int argc, char **argv) {
    *  Solver nonlinear system
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   PetscCall(TSSolve(ts, X));
+
+  if (user->save == 2) {
+    char fname[PETSC_MAX_PATH_LEN];
+    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->Nt);
+
+    PetscViewer viewer;
+    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+    PetscCall(VecView(X, viewer));
+    PetscCall(PetscViewerDestroy(&viewer));
+  }
 
   PetscCall(VecDestroy(&X));
   PetscCall(VecDestroy(&R));
