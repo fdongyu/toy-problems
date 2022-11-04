@@ -167,8 +167,6 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
   user->comm   = comm;
   user->Nx     = 4;
   user->Ny     = 5;
-  user->Lx     = user->Nx * 1.0;
-  user->Ly     = user->Ny * 1.0;
   user->hx     = 1.0;
   user->hy     = 1.0;
   user->hu     = 10.0;  // water depth for the upstream of dam   [m]
@@ -201,6 +199,9 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
   PetscCall(ierr);
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
+
+  user->Lx = user->Nx * 1.0;
+  user->Ly = user->Ny * 1.0;
 
   PetscReal max_time = user->Nt * user->dt;
   if (!user->rank) {
@@ -416,7 +417,7 @@ PetscErrorCode AllocateVertices(PetscInt num_vertices, RDyVertex *vertices) {
 /// @param [in] dm A PETSc DM
 /// @param [inout] cells A RDyCell structure that is populated 
 /// @return 
-static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells) {
+static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_cells_local) {
 
   PetscFunctionBegin;
 
@@ -424,6 +425,8 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells) {
   PetscInt eStart, eEnd;
   DMPlexGetHeightStratum(dm, 0, &cStart, &cEnd);
   DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
+
+  *num_cells_local = 0;
 
   for (PetscInt c = cStart; c < cEnd; c++) {
 
@@ -446,6 +449,7 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells) {
     cells->num_edges[icell] = 0;
     if (gref >= 0) {
       cells->is_local[icell] = PETSC_TRUE;
+      (*num_cells_local)++;
     } else {
       cells->is_local[icell] = PETSC_FALSE;
     }
@@ -612,11 +616,39 @@ static PetscErrorCode CreateMesh(User user) {
   PetscCall(AllocateVertices(mesh_ptr->num_vertices, &mesh_ptr->vertices));
 
   // Populates mesh elements from PETSc DM
-  PetscCall(PopulateCellsFromDM(user->dm, &mesh_ptr->cells));
+  PetscCall(PopulateCellsFromDM(user->dm, &mesh_ptr->cells, &mesh_ptr->num_cells_local));
   PetscCall(PopulateEdgesFromDM(user->dm, &mesh_ptr->edges));
   PetscCall(PopulateVerticesFromDM(user->dm, &mesh_ptr->vertices));
 
-  return 0;
+  PetscFunctionReturn(0);
+}
+
+
+static PetscErrorCode SetInitialCondition(User user, Vec X) {
+
+  PetscFunctionBegin;
+
+  RDyMesh *mesh = user->mesh;
+  RDyCell *cells = &mesh->cells;
+
+  PetscCall(VecZeroEntries(X));
+
+  PetscScalar *x_ptr;
+  VecGetArray(X, &x_ptr);
+
+  for (PetscInt icell=0; icell<mesh->num_cells_local; icell++) {
+    PetscInt ndof = 3;
+    PetscInt idx = icell*ndof;
+    if (cells->centroid[icell].X[1] < 95.0) {
+      x_ptr[idx] = user->hu;
+    } else {
+      x_ptr[idx] = user->hd;
+    }
+  }
+
+  VecRestoreArray(X, &x_ptr);
+
+  PetscFunctionReturn(0);
 }
 
 int main(int argc, char **argv) {
@@ -627,6 +659,7 @@ int main(int argc, char **argv) {
   PetscCall(PetscNew(&user));
   PetscCall(ProcessOptions(PETSC_COMM_WORLD, user));
 
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD,"1. CreateDM\n"));
   PetscCall(CreateDM(user));
 
   Vec X, R;
@@ -634,7 +667,20 @@ int main(int argc, char **argv) {
   PetscCall(VecDuplicate(X, &user->B));
   VecViewFromOptions(X, NULL, "-vec_view");
 
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD,"2. CreateMesh\n"));
   PetscCall(CreateMesh(user));
+
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD,"3. SetInitialCondition\n"));
+  PetscCall(SetInitialCondition(user, X));
+  {
+    char fname[PETSC_MAX_PATH_LEN];
+    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_IC.dat", user->Nx, user->Ny, user->dt);
+
+    PetscViewer viewer;
+    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+    PetscCall(VecView(X, viewer));
+    PetscCall(PetscViewerDestroy(&viewer));
+  }
 
   PetscCall(PetscFinalize());
 
