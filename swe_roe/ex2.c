@@ -593,6 +593,74 @@ static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
   PetscFunctionReturn(0);
 }
 
+static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
+
+  PetscFunctionBegin;
+
+  PetscBool useNatural;
+  PetscCall(DMGetUseNatural(dm, &useNatural));
+
+  if (useNatural){
+    PetscInt num_fields;
+
+    PetscCall(DMGetNumFields(dm, &num_fields));
+
+    // Create the natural vector
+    Vec natural;
+    PetscCall(DMCreateGlobalVector(dm, &natural));
+    PetscInt natural_size = 0, cum_natural_size = 0;
+    PetscCall(VecGetLocalSize(natural, &natural_size));
+    PetscCall(MPI_Scan(&natural_size, &cum_natural_size, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD));
+
+    // Add entries in the natural vector
+    PetscScalar *entries;
+    printf("rank = %d; num_fields = %d; natural_size = %d %d; offset = %d\n",rank, num_fields,natural_size,cum_natural_size, cum_natural_size/num_fields - natural_size/num_fields);
+    PetscCall(VecGetArray(natural, &entries));
+    for (PetscInt i = 0; i < natural_size; ++i) {
+      if (i % num_fields == 0) {
+        entries[i] = i/num_fields + cum_natural_size/num_fields - natural_size/num_fields;
+      }
+      else {
+        entries[i] = -1 - rank;
+      }
+    }
+    PetscCall(VecRestoreArray(natural, &entries));
+    VecView(natural,PETSC_VIEWER_STDOUT_WORLD);
+
+    // Map natural IDs in global order
+    Vec global;
+    PetscCall(DMCreateGlobalVector(dm, &global));
+    PetscCall(DMPlexNaturalToGlobalBegin(dm, natural, global));
+    PetscCall(DMPlexNaturalToGlobalEnd(dm, natural, global));
+    VecView(global,PETSC_VIEWER_STDOUT_WORLD);
+
+    // Map natural IDs in local order
+    Vec local;
+    PetscCall(DMCreateLocalVector(dm, &local));
+    PetscCall(DMGlobalToLocalBegin(dm, global, INSERT_VALUES, local));
+    PetscCall(DMGlobalToLocalEnd(dm, global, INSERT_VALUES, local));
+    VecView(local,PETSC_VIEWER_STDOUT_WORLD);
+
+    // Save natural IDs
+    PetscInt local_size;
+    PetscCall(VecGetLocalSize(local, &local_size));
+    PetscCall(VecGetArray(local, &entries));
+    printf("rank = %d; local_size = %d; \n",rank,local_size);
+    for (PetscInt i = 0; i < local_size/num_fields; ++i) {
+      cells->natural_id[i] = entries[i*num_fields];
+    }
+    PetscCall(VecRestoreArray(local, &entries));
+
+    // Cleanup
+    PetscCall(VecDestroy(&natural));
+    PetscCall(VecDestroy(&global));
+    PetscCall(VecDestroy(&local));
+
+  }
+
+  PetscFunctionReturn(0);
+}
+
 /// Creates the RDyMesh structure from PETSc DM
 /// @param [inout] user A User data structure that is modified
 /// @return 0 on success, or a non-zero error code on failure
@@ -628,6 +696,7 @@ static PetscErrorCode CreateMesh(User user) {
   PetscCall(PopulateCellsFromDM(user->dm, &mesh_ptr->cells, &mesh_ptr->num_cells_local));
   PetscCall(PopulateEdgesFromDM(user->dm, &mesh_ptr->edges));
   PetscCall(PopulateVerticesFromDM(user->dm, &mesh_ptr->vertices));
+  PetscCall(SaveNaturalCellIDs(user->dm, &mesh_ptr->cells, user->rank));
 
   PetscFunctionReturn(0);
 }
@@ -868,7 +937,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         }
       }
 
-    } else {
+    } else if (cells->is_local[l]) {
 
       // Perform computation for a boundary edge
 
