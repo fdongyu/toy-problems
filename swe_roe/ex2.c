@@ -663,6 +663,18 @@ static PetscErrorCode SetInitialCondition(User user, Vec X) {
   PetscFunctionReturn(0);
 }
 
+/// @brief Computes flux based on Roe solver
+/// @param [in] hl Height left of the edge
+/// @param [in] hr Height right of the edge
+/// @param [in] ul Velocity in x-dir left of the edge
+/// @param [in] ur Velocity in x-dir right of the edge
+/// @param [in] vl Velocity in y-dir left of the edge
+/// @param [in] vr Velocity in y-dir right of the edge
+/// @param [in] sn sine of the angle between edge and y-axis
+/// @param [in] cn cosine of the angle between edge and y-axis
+/// @param [out] fij flux
+/// @param [out] amax maximum wave speed
+/// @return 0 on success, or a non-zero error code on failure
 PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, PetscReal vl, PetscReal vr, PetscReal sn, PetscReal cn,
                       PetscScalar *fij, PetscScalar *amax) {
   PetscFunctionBeginUser;
@@ -754,6 +766,14 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   PetscFunctionReturn(0);
 }
 
+/// @brief Computes velocities in x and y-dir based on momentum in x and y-dir
+/// @param tiny_h Threshold value for height
+/// @param h Height
+/// @param hu Momentum in x-dir
+/// @param hv Momentum in y-dir
+/// @param u Velocity in x-dir
+/// @param v Velocit in y-dir
+/// @return 0 on success, or a non-zero error code on failure
 static PetscErrorCode GetVelocityFromMomentum(PetscReal tiny_h, PetscReal h, PetscReal hu, PetscReal hv, PetscReal *u, PetscReal *v) {
 
   PetscFunctionBeginUser;
@@ -769,6 +789,13 @@ static PetscErrorCode GetVelocityFromMomentum(PetscReal tiny_h, PetscReal h, Pet
   PetscFunctionReturn(0);
 }
 
+/// @brief It is the RHSFunction called by TS
+/// @param [in] ts A TS struct
+/// @param [in] t Time
+/// @param [in] X A global solution Vec
+/// @param [inout] F A global flux Vec
+/// @param [inout] ptr A user-defined pointer
+/// @return 0 on success, or a non-zero error code on failure
 PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   PetscFunctionBeginUser;
