@@ -423,8 +423,10 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_c
 
   PetscInt cStart, cEnd;
   PetscInt eStart, eEnd;
+  PetscInt vStart, vEnd;
   DMPlexGetHeightStratum(dm, 0, &cStart, &cEnd);
   DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
+  DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
 
   *num_cells_local = 0;
 
@@ -459,12 +461,12 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_c
       if (IsClosureWithinBounds(p[i], eStart, eEnd)) {
         PetscInt offset = cells->edge_offset[icell];
         PetscInt index = offset + cells->num_edges[icell];
-        cells->edge_ids[index] = p[i];
+        cells->edge_ids[index] = p[i] - eStart;
         cells->num_edges[icell]++;
       } else {
         PetscInt offset = cells->vertex_offset[icell];
         PetscInt index = offset + cells->num_vertices[icell];
-        cells->vertex_ids[index] = p[i];
+        cells->vertex_ids[index] = p[i] - vStart;
         cells->num_vertices[icell]++;
       }
     }
@@ -482,8 +484,12 @@ static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
 
   PetscFunctionBegin;
 
+  PetscInt cStart, cEnd;
   PetscInt eStart, eEnd;
+  PetscInt vStart, vEnd;
+  DMPlexGetHeightStratum(dm, 0, &cStart, &cEnd);
   DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
+  DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
 
   for (PetscInt e = eStart; e < eEnd; e++) {
 
@@ -504,8 +510,8 @@ static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
     PetscCall(DMPlexGetTransitiveClosure(dm, e, use_cone, &pSize, &p));
     assert(pSize == 3);
     PetscInt index = iedge*2;
-    edges->vertex_ids[index+0] = p[2];
-    edges->vertex_ids[index+1] = p[4];
+    edges->vertex_ids[index+0] = p[2] - vStart;
+    edges->vertex_ids[index+1] = p[4] - vStart;
     PetscCall(DMPlexRestoreTransitiveClosure(dm, e, use_cone, &pSize, &p));
 
     // edge-to-cell
@@ -515,7 +521,7 @@ static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
     for (PetscInt i = 2; i < pSize * 2; i += 2) {
       PetscInt offset = edges->cell_offset[iedge];
       PetscInt index = offset + edges->num_cells[iedge];
-      edges->cell_ids[index] = p[i];
+      edges->cell_ids[index] = p[i] - cStart;
       edges->num_cells[iedge]++;
     }
     PetscCall(DMPlexRestoreTransitiveClosure(dm, e, PETSC_FALSE, &pSize, &p));
@@ -533,8 +539,10 @@ static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
 
   PetscFunctionBegin;
 
+  PetscInt cStart, cEnd;
   PetscInt eStart, eEnd;
   PetscInt vStart, vEnd;
+  DMPlexGetHeightStratum(dm, 0, &cStart, &cEnd);
   DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
   DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
 
@@ -566,12 +574,12 @@ static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
       if (IsClosureWithinBounds(p[i], eStart, eEnd)) {
         PetscInt offset = vertices->edge_offset[ivertex];
         PetscInt index = offset + vertices->num_edges[ivertex];
-        vertices->edge_ids[index] = p[i];
+        vertices->edge_ids[index] = p[i] - eStart;
         vertices->num_edges[ivertex]++;
       } else {
         PetscInt offset = vertices->cell_offset[ivertex];
         PetscInt index = offset + vertices->num_cells[ivertex];
-        vertices->cell_ids[index] = p[i];
+        vertices->cell_ids[index] = p[i] - cStart;
         vertices->num_cells[ivertex]++;
       }
     }
