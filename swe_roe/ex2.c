@@ -57,12 +57,12 @@ typedef struct {
   PetscBool *is_local; /* true if the vertex is shared by a local cell         */
 
   PetscInt *num_cells; /* number of cells sharing the vertex          */
-  PetscInt *num_edges;          /* number of edges sharing the vertex                   */
+  PetscInt *num_edges; /* number of edges sharing the vertex                   */
 
-  PetscInt *edge_offset;          /* offset for edge IDs that share the vertex                       */
+  PetscInt *edge_offset; /* offset for edge IDs that share the vertex                       */
   PetscInt *cell_offset; /* offset for internal cell IDs that share the vertex              */
 
-  PetscInt *edge_ids;          /* edge IDs that share the vertex                       */
+  PetscInt *edge_ids; /* edge IDs that share the vertex                       */
   PetscInt *cell_ids; /* internal cell IDs that share the vertex              */
 
   RDyCoordinate *coordinate; /* (x,y,z) location of the vertex                       */
@@ -162,7 +162,6 @@ PetscBool IsClosureWithinBounds(PetscInt closure, PetscInt start, PetscInt end) 
 /// @param [inout] user A User data structure that is updated
 /// @return 0 on success, or a non-zero error code on failure
 static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
-
   PetscFunctionBegin;
 
   user->comm   = comm;
@@ -216,7 +215,6 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
 /// @param [inout] user A User data structure that is modified
 /// @return 0 on success, or a non-zero error code on failure
 static PetscErrorCode CreateDM(User user) {
-
   PetscFunctionBegin;
 
   size_t len;
@@ -416,10 +414,9 @@ PetscErrorCode AllocateVertices(PetscInt num_vertices, RDyVertex *vertices) {
 
 /// @brief Save cell-to-edge, cell-to-vertex, and cell geometric attributes.
 /// @param [in] dm A PETSc DM
-/// @param [inout] cells A RDyCell structure that is populated 
-/// @return 
+/// @param [inout] cells A RDyCell structure that is populated
+/// @return
 static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_cells_local) {
-
   PetscFunctionBegin;
 
   PetscInt cStart, cEnd;
@@ -432,15 +429,14 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_c
   *num_cells_local = 0;
 
   for (PetscInt c = cStart; c < cEnd; c++) {
-
-    PetscInt icell = c - cStart;
+    PetscInt  icell = c - cStart;
     PetscInt  gref, junkInt;
-    PetscInt dim=2;
+    PetscInt  dim = 2;
     PetscReal centroid[dim], normal[dim];
     PetscCall(DMPlexGetPointGlobal(dm, c, &gref, &junkInt));
     DMPlexComputeCellGeometryFVM(dm, c, &cells->area[icell], &centroid[0], &normal[0]);
 
-    for (PetscInt idim=0; idim<dim; idim++) {
+    for (PetscInt idim = 0; idim < dim; idim++) {
       cells->centroid[icell].X[idim] = centroid[idim];
     }
 
@@ -449,7 +445,7 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_c
     PetscInt  use_cone = PETSC_TRUE;
 
     cells->num_vertices[icell] = 0;
-    cells->num_edges[icell] = 0;
+    cells->num_edges[icell]    = 0;
     if (gref >= 0) {
       cells->is_local[icell] = PETSC_TRUE;
       (*num_cells_local)++;
@@ -460,13 +456,13 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_c
     PetscCall(DMPlexGetTransitiveClosure(dm, c, use_cone, &pSize, &p));
     for (PetscInt i = 2; i < pSize * 2; i += 2) {
       if (IsClosureWithinBounds(p[i], eStart, eEnd)) {
-        PetscInt offset = cells->edge_offset[icell];
-        PetscInt index = offset + cells->num_edges[icell];
+        PetscInt offset        = cells->edge_offset[icell];
+        PetscInt index         = offset + cells->num_edges[icell];
         cells->edge_ids[index] = p[i] - eStart;
         cells->num_edges[icell]++;
       } else {
-        PetscInt offset = cells->vertex_offset[icell];
-        PetscInt index = offset + cells->num_vertices[icell];
+        PetscInt offset          = cells->vertex_offset[icell];
+        PetscInt index           = offset + cells->num_vertices[icell];
         cells->vertex_ids[index] = p[i] - vStart;
         cells->num_vertices[icell]++;
       }
@@ -479,10 +475,9 @@ static PetscErrorCode PopulateCellsFromDM(DM dm, RDyCell *cells, PetscInt *num_c
 
 /// @brief Save edge-to-cell, edge-to-vertex, and geometric attributes.
 /// @param [in] dm A PETSc DM
-/// @param [inout] edges A RDyVertex structure that is populated 
-/// @return 
+/// @param [inout] edges A RDyVertex structure that is populated
+/// @return
 static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
-
   PetscFunctionBegin;
 
   PetscInt cStart, cEnd;
@@ -493,15 +488,14 @@ static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
   DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
 
   for (PetscInt e = eStart; e < eEnd; e++) {
-
-    PetscInt iedge = e - eStart;
-    PetscInt dim = 2;
+    PetscInt  iedge = e - eStart;
+    PetscInt  dim   = 2;
     PetscReal centroid[dim], normal[dim];
     DMPlexComputeCellGeometryFVM(dm, e, &edges->length[iedge], &centroid[0], &normal[0]);
 
-    for (PetscInt idim=0; idim<dim; idim++) {
+    for (PetscInt idim = 0; idim < dim; idim++) {
       edges->centroid[iedge].X[idim] = centroid[idim];
-      edges->normal[iedge].V[idim] = normal[idim];
+      edges->normal[iedge].V[idim]   = normal[idim];
     }
 
     // edge-to-vertex
@@ -510,9 +504,9 @@ static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
     PetscInt  use_cone = PETSC_TRUE;
     PetscCall(DMPlexGetTransitiveClosure(dm, e, use_cone, &pSize, &p));
     assert(pSize == 3);
-    PetscInt index = iedge*2;
-    edges->vertex_ids[index+0] = p[2] - vStart;
-    edges->vertex_ids[index+1] = p[4] - vStart;
+    PetscInt index               = iedge * 2;
+    edges->vertex_ids[index + 0] = p[2] - vStart;
+    edges->vertex_ids[index + 1] = p[4] - vStart;
     PetscCall(DMPlexRestoreTransitiveClosure(dm, e, use_cone, &pSize, &p));
 
     // edge-to-cell
@@ -520,8 +514,8 @@ static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
     PetscCall(DMPlexGetTransitiveClosure(dm, e, PETSC_FALSE, &pSize, &p));
     assert(pSize == 2 || pSize == 3);
     for (PetscInt i = 2; i < pSize * 2; i += 2) {
-      PetscInt offset = edges->cell_offset[iedge];
-      PetscInt index = offset + edges->num_cells[iedge];
+      PetscInt offset        = edges->cell_offset[iedge];
+      PetscInt index         = offset + edges->num_cells[iedge];
       edges->cell_ids[index] = p[i] - cStart;
       edges->num_cells[iedge]++;
     }
@@ -531,13 +525,12 @@ static PetscErrorCode PopulateEdgesFromDM(DM dm, RDyEdge *edges) {
   PetscFunctionReturn(0);
 }
 
-/// @brief Save vertex-to-edge, vertex-to-cell, and geometric attributes 
+/// @brief Save vertex-to-edge, vertex-to-cell, and geometric attributes
 /// (e.g area).
 /// @param [in] dm A PETSc DM
-/// @param [inout] edges A RDyVertex structure that is populated 
-/// @return 
+/// @param [inout] edges A RDyVertex structure that is populated
+/// @return
 static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
-
   PetscFunctionBegin;
 
   PetscInt cStart, cEnd;
@@ -555,8 +548,7 @@ static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
   VecGetArray(coordinates, &coords);
 
   for (PetscInt v = vStart; v < vEnd; v++) {
-
-    PetscInt ivertex = v - vStart;
+    PetscInt  ivertex = v - vStart;
     PetscInt  pSize;
     PetscInt *p = NULL;
 
@@ -564,8 +556,8 @@ static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
 
     PetscInt coordOffset, dim = 2;
     PetscSectionGetOffset(coordSection, v, &coordOffset);
-    for (PetscInt idim=0; idim<dim; idim++) {
-      vertices->coordinate[ivertex].X[idim] = coords[coordOffset+idim];
+    for (PetscInt idim = 0; idim < dim; idim++) {
+      vertices->coordinate[ivertex].X[idim] = coords[coordOffset + idim];
     }
 
     vertices->num_edges[ivertex] = 0;
@@ -573,13 +565,13 @@ static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
 
     for (PetscInt i = 2; i < pSize * 2; i += 2) {
       if (IsClosureWithinBounds(p[i], eStart, eEnd)) {
-        PetscInt offset = vertices->edge_offset[ivertex];
-        PetscInt index = offset + vertices->num_edges[ivertex];
+        PetscInt offset           = vertices->edge_offset[ivertex];
+        PetscInt index            = offset + vertices->num_edges[ivertex];
         vertices->edge_ids[index] = p[i] - eStart;
         vertices->num_edges[ivertex]++;
       } else {
-        PetscInt offset = vertices->cell_offset[ivertex];
-        PetscInt index = offset + vertices->num_cells[ivertex];
+        PetscInt offset           = vertices->cell_offset[ivertex];
+        PetscInt index            = offset + vertices->num_cells[ivertex];
         vertices->cell_ids[index] = p[i] - cStart;
         vertices->num_cells[ivertex]++;
       }
@@ -594,13 +586,12 @@ static PetscErrorCode PopulateVerticesFromDM(DM dm, RDyVertex *vertices) {
 }
 
 static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
-
   PetscFunctionBegin;
 
   PetscBool useNatural;
   PetscCall(DMGetUseNatural(dm, &useNatural));
 
-  if (useNatural){
+  if (useNatural) {
     PetscInt num_fields;
 
     PetscCall(DMGetNumFields(dm, &num_fields));
@@ -614,40 +605,40 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
 
     // Add entries in the natural vector
     PetscScalar *entries;
-    printf("rank = %d; num_fields = %d; natural_size = %d %d; offset = %d\n",rank, num_fields,natural_size,cum_natural_size, cum_natural_size/num_fields - natural_size/num_fields);
+    printf("rank = %d; num_fields = %d; natural_size = %d %d; offset = %d\n", rank, num_fields, natural_size, cum_natural_size,
+           cum_natural_size / num_fields - natural_size / num_fields);
     PetscCall(VecGetArray(natural, &entries));
     for (PetscInt i = 0; i < natural_size; ++i) {
       if (i % num_fields == 0) {
-        entries[i] = i/num_fields + cum_natural_size/num_fields - natural_size/num_fields;
-      }
-      else {
+        entries[i] = i / num_fields + cum_natural_size / num_fields - natural_size / num_fields;
+      } else {
         entries[i] = -1 - rank;
       }
     }
     PetscCall(VecRestoreArray(natural, &entries));
-    VecView(natural,PETSC_VIEWER_STDOUT_WORLD);
+    VecView(natural, PETSC_VIEWER_STDOUT_WORLD);
 
     // Map natural IDs in global order
     Vec global;
     PetscCall(DMCreateGlobalVector(dm, &global));
     PetscCall(DMPlexNaturalToGlobalBegin(dm, natural, global));
     PetscCall(DMPlexNaturalToGlobalEnd(dm, natural, global));
-    VecView(global,PETSC_VIEWER_STDOUT_WORLD);
+    VecView(global, PETSC_VIEWER_STDOUT_WORLD);
 
     // Map natural IDs in local order
     Vec local;
     PetscCall(DMCreateLocalVector(dm, &local));
     PetscCall(DMGlobalToLocalBegin(dm, global, INSERT_VALUES, local));
     PetscCall(DMGlobalToLocalEnd(dm, global, INSERT_VALUES, local));
-    VecView(local,PETSC_VIEWER_STDOUT_WORLD);
+    VecView(local, PETSC_VIEWER_STDOUT_WORLD);
 
     // Save natural IDs
     PetscInt local_size;
     PetscCall(VecGetLocalSize(local, &local_size));
     PetscCall(VecGetArray(local, &entries));
-    printf("rank = %d; local_size = %d; \n",rank,local_size);
-    for (PetscInt i = 0; i < local_size/num_fields; ++i) {
-      cells->natural_id[i] = entries[i*num_fields];
+    printf("rank = %d; local_size = %d; \n", rank, local_size);
+    for (PetscInt i = 0; i < local_size / num_fields; ++i) {
+      cells->natural_id[i] = entries[i * num_fields];
     }
     PetscCall(VecRestoreArray(local, &entries));
 
@@ -655,7 +646,6 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
     PetscCall(VecDestroy(&natural));
     PetscCall(VecDestroy(&global));
     PetscCall(VecDestroy(&local));
-
   }
 
   PetscFunctionReturn(0);
@@ -665,7 +655,6 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
 /// @param [inout] user A User data structure that is modified
 /// @return 0 on success, or a non-zero error code on failure
 static PetscErrorCode CreateMesh(User user) {
-
   PetscFunctionBegin;
 
   PetscCall(RDyAlloc(sizeof(RDyMesh), &user->mesh));
@@ -706,10 +695,9 @@ static PetscErrorCode CreateMesh(User user) {
 /// @param [inout] X Vec for initial condition
 /// @return 0 on success, or a non-zero error code on failure
 static PetscErrorCode SetInitialCondition(User user, Vec X) {
-
   PetscFunctionBegin;
 
-  RDyMesh *mesh = user->mesh;
+  RDyMesh *mesh  = user->mesh;
   RDyCell *cells = &mesh->cells;
 
   PetscCall(VecZeroEntries(X));
@@ -717,9 +705,9 @@ static PetscErrorCode SetInitialCondition(User user, Vec X) {
   PetscScalar *x_ptr;
   VecGetArray(X, &x_ptr);
 
-  for (PetscInt icell=0; icell<mesh->num_cells_local; icell++) {
+  for (PetscInt icell = 0; icell < mesh->num_cells_local; icell++) {
     PetscInt ndof = 3;
-    PetscInt idx = icell*ndof;
+    PetscInt idx  = icell * ndof;
     if (cells->centroid[icell].X[1] < 95.0) {
       x_ptr[idx] = user->hu;
     } else {
@@ -766,7 +754,7 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   PetscReal dv     = vr - vl;
   PetscReal dupar  = -du * sn + dv * cn;
   PetscReal duperp = du * cn + dv * sn;
-  //printf("cn = %f; sn = %f\n",cn,sn);
+  // printf("cn = %f; sn = %f\n",cn,sn);
 
   PetscReal dW[3];
   dW[0] = 0.5 * (dh - hhat * duperp / chat);
@@ -844,15 +832,14 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
 /// @param v Velocit in y-dir
 /// @return 0 on success, or a non-zero error code on failure
 static PetscErrorCode GetVelocityFromMomentum(PetscReal tiny_h, PetscReal h, PetscReal hu, PetscReal hv, PetscReal *u, PetscReal *v) {
-
   PetscFunctionBeginUser;
 
   if (h < tiny_h) {
     *u = 0.0;
     *v = 0.0;
   } else {
-    *u = hu/h;
-    *v = hv/h;
+    *u = hu / h;
+    *v = hv / h;
   }
 
   PetscFunctionReturn(0);
@@ -866,16 +853,15 @@ static PetscErrorCode GetVelocityFromMomentum(PetscReal tiny_h, PetscReal h, Pet
 /// @param [inout] ptr A user-defined pointer
 /// @return 0 on success, or a non-zero error code on failure
 PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
-
   PetscFunctionBeginUser;
 
   User user = (User)ptr;
 
-  DM dm = user->dm;
-  RDyMesh *mesh = user->mesh;
+  DM       dm    = user->dm;
+  RDyMesh *mesh  = user->mesh;
   RDyCell *cells = &mesh->cells;
   RDyEdge *edges = &mesh->edges;
-  //RDyVertex *vertices = &mesh->vertices;
+  // RDyVertex *vertices = &mesh->vertices;
 
   user->tstep = user->tstep + 1;
 
@@ -889,39 +875,37 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(VecGetArray(F, &f_ptr));
 
   PetscInt dof = 3;
-  for (PetscInt iedge=0; iedge<mesh->num_edges; iedge++) {
+  for (PetscInt iedge = 0; iedge < mesh->num_edges; iedge++) {
     PetscInt cellOffset = edges->cell_offset[iedge];
-    PetscInt l = edges->cell_ids[cellOffset  ];
-    PetscInt r = edges->cell_ids[cellOffset+1];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
 
     PetscReal sn, cn;
 
     PetscBool is_edge_vertical = PETSC_TRUE;
-    if ( PetscAbs(edges->normal[iedge].V[0]) < 1.e-10) {
+    if (PetscAbs(edges->normal[iedge].V[0]) < 1.e-10) {
       sn = 1.0;
       cn = 0.0;
     } else if (PetscAbs(edges->normal[iedge].V[1]) < 1.e-10) {
       is_edge_vertical = PETSC_FALSE;
-      sn = 0.0;
-      cn = 1.0;
+      sn               = 0.0;
+      cn               = 1.0;
     } else {
       printf("The code only support quad cells with edges that align with x and y axis\n");
       exit(0);
     }
 
     if (r >= 0 && l >= 0) {
-
       // Perform computation for an internal edge
 
-      PetscReal hl = x_ptr[l*dof + 0];
-      PetscReal hr = x_ptr[r*dof + 0];
+      PetscReal hl = x_ptr[l * dof + 0];
+      PetscReal hr = x_ptr[r * dof + 0];
 
       if (!(hr < user->tiny_h && hl < user->tiny_h)) {
-
-        PetscReal hul = x_ptr[l*dof + 1];
-        PetscReal hvl = x_ptr[l*dof + 2];
-        PetscReal hur = x_ptr[r*dof + 1];
-        PetscReal hvr = x_ptr[r*dof + 2];
+        PetscReal hul = x_ptr[l * dof + 1];
+        PetscReal hvl = x_ptr[l * dof + 2];
+        PetscReal hur = x_ptr[r * dof + 1];
+        PetscReal hvr = x_ptr[r * dof + 2];
 
         PetscReal ur, vr, ul, vl;
 
@@ -931,14 +915,13 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
 
-        for (PetscInt idof=0; idof<dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l*dof + idof] -= flux[idof];
-          if (cells->is_local[r]) f_ptr[r*dof + idof] += flux[idof];
+        for (PetscInt idof = 0; idof < dof; idof++) {
+          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof];
+          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof];
         }
       }
 
     } else if (cells->is_local[l]) {
-
       // Perform computation for a boundary edge
 
       PetscBool bnd_cell_order_flipped = PETSC_FALSE;
@@ -949,12 +932,11 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         if (cells->centroid[l].X[0] > edges->centroid[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
       }
 
-      PetscReal hl = x_ptr[l*dof + 0];
+      PetscReal hl = x_ptr[l * dof + 0];
 
       if (!(hl < user->tiny_h)) {
-
-        PetscReal hul = x_ptr[l*dof + 1];
-        PetscReal hvl = x_ptr[l*dof + 2];
+        PetscReal hul = x_ptr[l * dof + 1];
+        PetscReal hvl = x_ptr[l * dof + 2];
 
         PetscReal ul, vl;
         PetscCall(GetVelocityFromMomentum(user->tiny_h, hl, hul, hvl, &ul, &vl));
@@ -962,28 +944,34 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         PetscReal hr, ur, vr;
         hr = hl;
         if (is_edge_vertical) {
-          ur =  ul;
+          ur = ul;
           vr = -vl;
         } else {
           ur = -ul;
-          vr =  vl;
+          vr = vl;
         }
 
         if (bnd_cell_order_flipped) {
           PetscReal tmp;
-          tmp = hl; hl = hr; hr = tmp;
-          tmp = ul; ul = ur; ur = tmp;
-          tmp = vl; vl = vr; vr = tmp;
+          tmp = hl;
+          hl  = hr;
+          hr  = tmp;
+          tmp = ul;
+          ul  = ur;
+          ur  = tmp;
+          tmp = vl;
+          vl  = vr;
+          vr  = tmp;
         }
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
 
-        for (PetscInt idof=0; idof<dof; idof++) {
+        for (PetscInt idof = 0; idof < dof; idof++) {
           if (!bnd_cell_order_flipped) {
-            f_ptr[l*dof + idof] -= flux[idof];
+            f_ptr[l * dof + idof] -= flux[idof];
           } else {
-            f_ptr[l*dof + idof] += flux[idof];
+            f_ptr[l * dof + idof] += flux[idof];
           }
         }
       }
@@ -1012,7 +1000,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 }
 
 int main(int argc, char **argv) {
-
   PetscCall(PetscInitialize(&argc, &argv, (char *)0, help));
 
   User user;
@@ -1022,7 +1009,7 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create the DM
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  PetscCall(PetscPrintf(PETSC_COMM_WORLD,"1. CreateDM\n"));
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD, "1. CreateDM\n"));
   PetscCall(CreateDM(user));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
@@ -1038,13 +1025,13 @@ int main(int argc, char **argv) {
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create the mesh
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  PetscCall(PetscPrintf(PETSC_COMM_WORLD,"2. CreateMesh\n"));
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD, "2. CreateMesh\n"));
   PetscCall(CreateMesh(user));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initial Condition
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  PetscCall(PetscPrintf(PETSC_COMM_WORLD,"3. SetInitialCondition\n"));
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD, "3. SetInitialCondition\n"));
   PetscCall(SetInitialCondition(user, X));
   {
     char fname[PETSC_MAX_PATH_LEN];
@@ -1060,7 +1047,7 @@ int main(int argc, char **argv) {
    *  Create timestepping solver context
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   PetscReal max_time = user->Nt * user->dt;
-  TS ts;
+  TS        ts;
   PetscCall(TSCreate(user->comm, &ts));
   PetscCall(TSSetProblemType(ts, TS_NONLINEAR));
   PetscCall(TSSetType(ts, TSEULER));
@@ -1072,7 +1059,7 @@ int main(int argc, char **argv) {
   PetscCall(TSSetTimeStep(ts, user->dt));
 
   PetscCall(TSSetFromOptions(ts));
-  PetscCall(TSSolve(ts,X));
+  PetscCall(TSSolve(ts, X));
 
   if (user->save) {
     char fname[PETSC_MAX_PATH_LEN];
