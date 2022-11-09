@@ -1118,20 +1118,15 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   if (user->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
+    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep-1);
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(VecView(X, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
 
-    sprintf(fname, "outputs/ex2_flux_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
+    sprintf(fname, "outputs/ex2_flux_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep-1);
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(VecView(F, viewer));
-    PetscCall(PetscViewerDestroy(&viewer));
-
-    sprintf(fname, "outputs/ex2_b.dat");
-    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
-    PetscCall(VecView(user->B, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
   }
 
@@ -1210,7 +1205,7 @@ int main(int argc, char **argv) {
 
   if (user->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_final.dat", user->Nx, user->Ny, user->dt);
+    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->Nt);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
