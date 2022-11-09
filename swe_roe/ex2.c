@@ -120,12 +120,12 @@ struct _n_User {
   char      filename[PETSC_MAX_PATH_LEN];
   DM        dm;
   PetscInt  Nt, Nx, Ny;
-  PetscReal dt, hx, hy;
+  PetscReal dt, dx, dy;
   PetscReal Lx, Ly;
   PetscReal hu, hd;
   PetscReal tiny_h;
   PetscInt  dof, rank, comm_size;
-  Vec       B;
+  Vec       B, localB;
   Vec       localX;
   PetscBool debug, save, add_building;
   PetscInt  tstep;
@@ -167,8 +167,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
   user->comm   = comm;
   user->Nx     = 4;
   user->Ny     = 5;
-  user->hx     = 1.0;
-  user->hy     = 1.0;
+  user->dx     = 1.0;
+  user->dy     = 1.0;
   user->hu     = 10.0;  // water depth for the upstream of dam   [m]
   user->hd     = 5.0;   // water depth for the downstream of dam [m]
   user->tiny_h = 1e-7;
@@ -184,8 +184,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
     PetscCall(PetscOptionsInt("-Nx", "Number of cells in X", "", user->Nx, &user->Nx, NULL));
     PetscCall(PetscOptionsInt("-Ny", "Number of cells in Y", "", user->Ny, &user->Ny, NULL));
     PetscCall(PetscOptionsInt("-Nt", "Number of time steps", "", user->Nt, &user->Nt, NULL));
-    PetscCall(PetscOptionsReal("-hx", "dx", "", user->hx, &user->hx, NULL));
-    PetscCall(PetscOptionsReal("-hy", "dy", "", user->hy, &user->hy, NULL));
+    PetscCall(PetscOptionsReal("-dx", "dx", "", user->dx, &user->dx, NULL));
+    PetscCall(PetscOptionsReal("-dy", "dy", "", user->dy, &user->dy, NULL));
     PetscCall(PetscOptionsReal("-hu", "hu", "", user->hu, &user->hu, NULL));
     PetscCall(PetscOptionsReal("-hd", "hd", "", user->hd, &user->hd, NULL));
     PetscCall(PetscOptionsReal("-dt", "dt", "", user->dt, &user->dt, NULL));
@@ -605,8 +605,6 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
 
     // Add entries in the natural vector
     PetscScalar *entries;
-    printf("rank = %d; num_fields = %d; natural_size = %d %d; offset = %d\n", rank, num_fields, natural_size, cum_natural_size,
-           cum_natural_size / num_fields - natural_size / num_fields);
     PetscCall(VecGetArray(natural, &entries));
     for (PetscInt i = 0; i < natural_size; ++i) {
       if (i % num_fields == 0) {
@@ -636,7 +634,6 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
     PetscInt local_size;
     PetscCall(VecGetLocalSize(local, &local_size));
     PetscCall(VecGetArray(local, &entries));
-    printf("rank = %d; local_size = %d; \n", rank, local_size);
     for (PetscInt i = 0; i < local_size / num_fields; ++i) {
       cells->natural_id[i] = entries[i * num_fields];
     }
@@ -685,7 +682,7 @@ static PetscErrorCode CreateMesh(User user) {
   PetscCall(PopulateCellsFromDM(user->dm, &mesh_ptr->cells, &mesh_ptr->num_cells_local));
   PetscCall(PopulateEdgesFromDM(user->dm, &mesh_ptr->edges));
   PetscCall(PopulateVerticesFromDM(user->dm, &mesh_ptr->vertices));
-  PetscCall(SaveNaturalCellIDs(user->dm, &mesh_ptr->cells, user->rank));
+  //PetscCall(SaveNaturalCellIDs(user->dm, &mesh_ptr->cells, user->rank));
 
   PetscFunctionReturn(0);
 }
@@ -716,6 +713,77 @@ static PetscErrorCode SetInitialCondition(User user, Vec X) {
   }
 
   VecRestoreArray(X, &x_ptr);
+
+  PetscFunctionReturn(0);
+}
+
+PetscErrorCode AddBuildings(User user) {
+  PetscFunctionBeginUser;
+
+  PetscInt bu = 30 / user->dx;
+  PetscInt bd = 105 / user->dx;
+  PetscInt bl = 95 / user->dy;
+  PetscInt br = 105 / user->dy;
+
+  PetscCall(VecZeroEntries(user->B));
+
+  PetscScalar *b_ptr;
+  PetscCall(VecGetArray(user->B, &b_ptr));
+
+  /*
+
+  x represents the reflecting wall,
+  o represents the dam that will be broken suddenly.
+  hu is the upsatream water dpeth, and hd is the downstream water depth.
+
+
+/|\             xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ |              x                   xxxx                 x
+ |              x                   xxxx                 x
+95[m]           x                   xxxx                 x
+ |              x                   xxxx                 x
+ |              x                   xxxx                 x
+ |              x                   xxxx                 x
+\|/             x                   xxxx                 x
+/|\             x        hu         o          hd        x
+ |              x                   o                    x
+ |              x                   o                    x
+105[m]          x                   o                    x
+ |    /|\       x                   xxxx                 x
+ |     |        x                   xxxx                 x
+ |    30[m]     x                   xxxx                 x
+ |     |        x                   xxxx                 x
+ |     |        x                   xxxx                 x
+\|/   \|/       xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+                |                   |  |                 |
+                |<-----  95[m] ---->|  |                 |
+                |<------- 105[m] ----->|                 |
+                |<---------------- 200[m] -------------->|
+  */
+
+  RDyMesh *mesh = user->mesh;
+  RDyCell *cells = &mesh->cells;
+
+  PetscInt nbnd_1 = 0, nbnd_2 = 0;
+  for (PetscInt icell=0; icell<mesh->num_cells_local; icell++) {
+    PetscReal xc = cells->centroid[icell].X[1];
+    PetscReal yc = cells->centroid[icell].X[0];
+    if (yc < bu && xc >= bl && xc < br) {
+      b_ptr[icell*3 + 0] = 1.0;
+      nbnd_1++;
+    } else if (yc >= bd && xc >= bl && xc < br) {
+      b_ptr[icell*3 + 0] = 1.0;
+      nbnd_2++;
+    }
+  }
+
+  PetscCall(VecRestoreArray(user->B, &b_ptr));
+
+  PetscCall(DMGlobalToLocalBegin(user->dm, user->B, INSERT_VALUES, user->localB));
+  PetscCall(DMGlobalToLocalEnd(user->dm, user->B, INSERT_VALUES, user->localB));
+
+  PetscCall(PetscPrintf(user->comm, "Building size: bu=%d,bd=%d,bl=%d,br=%d\n", bu, bd, bl, br));
+  PetscCall(PetscPrintf(user->comm, "Buildings added sucessfully!\n"));
 
   PetscFunctionReturn(0);
 }
@@ -754,7 +822,6 @@ PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, Pe
   PetscReal dv     = vr - vl;
   PetscReal dupar  = -du * sn + dv * cn;
   PetscReal duperp = du * cn + dv * sn;
-  // printf("cn = %f; sn = %f\n",cn,sn);
 
   PetscReal dW[3];
   dW[0] = 0.5 * (dh - hhat * duperp / chat);
@@ -870,9 +937,10 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(VecZeroEntries(F));
 
   // Get pointers to vector data
-  PetscScalar *x_ptr, *f_ptr;
+  PetscScalar *x_ptr, *f_ptr, *b_ptr;
   PetscCall(VecGetArray(user->localX, &x_ptr));
   PetscCall(VecGetArray(F, &f_ptr));
+  PetscCall(VecGetArray(user->localB, &b_ptr));
 
   PetscInt dof = 3;
   for (PetscInt iedge = 0; iedge < mesh->num_edges; iedge++) {
@@ -900,28 +968,88 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
       PetscReal hl = x_ptr[l * dof + 0];
       PetscReal hr = x_ptr[r * dof + 0];
+      PetscReal bl = b_ptr[l * dof + 0];
+      PetscReal br = b_ptr[r * dof + 0];
 
-      if (!(hr < user->tiny_h && hl < user->tiny_h)) {
-        PetscReal hul = x_ptr[l * dof + 1];
-        PetscReal hvl = x_ptr[l * dof + 2];
+      if (bl == 0 && br == 0) {
+        // Both, left and right cells are not boundary walls
+        if (!(hr < user->tiny_h && hl < user->tiny_h)) {
+          PetscReal hul = x_ptr[l * dof + 1];
+          PetscReal hvl = x_ptr[l * dof + 2];
+          PetscReal hur = x_ptr[r * dof + 1];
+          PetscReal hvr = x_ptr[r * dof + 2];
+
+          PetscReal ur, vr, ul, vl;
+
+          PetscCall(GetVelocityFromMomentum(user->tiny_h, hr, hur, hvr, &ur, &vr));
+          PetscCall(GetVelocityFromMomentum(user->tiny_h, hl, hul, hvl, &ul, &vl));
+
+          PetscReal flux[3], amax;
+          PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+
+          for (PetscInt idof = 0; idof < dof; idof++) {
+            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof];
+            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof];
+          }
+
+        }
+
+      } else if (bl == 1 && br == 0) {
+
+        // Left cell is a boundary wall and right cell is an internal cell
+
+        PetscReal hr = x_ptr[r * dof + 0];
         PetscReal hur = x_ptr[r * dof + 1];
         PetscReal hvr = x_ptr[r * dof + 2];
 
-        PetscReal ur, vr, ul, vl;
-
+        PetscReal ur, vr;
         PetscCall(GetVelocityFromMomentum(user->tiny_h, hr, hur, hvr, &ur, &vr));
-        PetscCall(GetVelocityFromMomentum(user->tiny_h, hl, hul, hvl, &ul, &vl));
+
+        PetscReal hl = hr;
+        PetscReal ul, vl;
+        if (is_edge_vertical) {
+          ul =  ur;
+          vl = -vr;
+        } else {
+          ul = -ur;
+          vl =  vr;
+        }
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof];
           if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof];
         }
+
+      } else if (bl == 0 && br == 1 ) {
+        // Left cell is an internal cell and right cell is a boundary wall
+
+        PetscReal hl = x_ptr[l * dof + 0];
+        PetscReal hul = x_ptr[l * dof + 1];
+        PetscReal hvl = x_ptr[l * dof + 2];
+
+        PetscReal ul, vl;
+        PetscCall(GetVelocityFromMomentum(user->tiny_h, hl, hul, hvl, &ul, &vl));
+
+        PetscReal hr = hl;
+        PetscReal ur, vr;
+        if (is_edge_vertical) {
+          ur =  ul;
+          vr = -vl;
+        } else {
+          ur = -ul;
+          vr =  vl;
+        }
+
+        PetscReal flux[3], amax;
+        PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+        for (PetscInt idof = 0; idof < dof; idof++) {
+          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof];
+        }
+
       }
 
-    } else if (cells->is_local[l]) {
+    } else if (cells->is_local[l] && b_ptr[l * dof + 0] == 0) {
       // Perform computation for a boundary edge
 
       PetscBool bnd_cell_order_flipped = PETSC_FALSE;
@@ -981,6 +1109,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   // Restore vectors
   PetscCall(VecRestoreArray(user->localX, &x_ptr));
   PetscCall(VecRestoreArray(F, &f_ptr));
+  PetscCall(VecRestoreArray(user->localB, &b_ptr));
 
   if (user->save) {
     char fname[PETSC_MAX_PATH_LEN];
@@ -994,6 +1123,12 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(VecView(F, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
+
+    sprintf(fname, "outputs/ex2_b.dat");
+    PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
+    PetscCall(VecView(user->B, viewer));
+    PetscCall(PetscViewerDestroy(&viewer));
+
   }
 
   PetscFunctionReturn(0);
@@ -1021,6 +1156,7 @@ int main(int argc, char **argv) {
   PetscCall(VecDuplicate(X, &R));
   VecViewFromOptions(X, NULL, "-vec_view");
   PetscCall(DMCreateLocalVector(user->dm, &user->localX));  // size = dof * number of cells
+  PetscCall(VecDuplicate(user->localX, &user->localB));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create the mesh
@@ -1041,6 +1177,13 @@ int main(int argc, char **argv) {
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(VecView(X, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
+  }
+
+  /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
+   *  Add buildings
+   * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+  if (user->add_building) {
+    PetscCall(AddBuildings(user));
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
