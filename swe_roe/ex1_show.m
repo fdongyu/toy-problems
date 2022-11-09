@@ -1,11 +1,13 @@
 clear;close all;clc
 
-% User need to provide petsc directory
-addpath('/Users/xudo627/developments/petsc/share/petsc/matlab/');
+if ~exist('PetscBinaryRead')
+    error(['Please add PETSc MATLAB files before calling this script via: ' char(10) ...
+        'addpath <path-to-petsc>/share/petsc/matlab/'])
+end
 
 Lx = 200; % [m]
 Ly = 200; % [m]
-Nt  = length(dir('outputs/ex1*.dat')) - 1;
+Nt  = length(dir('outputs/ex1_Nx*.dat')) - 1;
 dof = 3;
 
 file_IC = dir('outputs/ex1_*_IC.dat');
@@ -43,7 +45,7 @@ title('Initial Condition','FontSize',15,'FontWeight','bold');
 imAlpha = ones(size(h0));
 imAlpha(1:30/dx,95/dy+1:105/dy) = 0;
 imAlpha(105/dy+1:200/dy,95/dy+1:105/dy) = 0;
-for i = 1 : Nt
+for i = 0 : Nt-1
     file  = dir(['outputs/ex1_*_' num2str(i) '.dat']);
     data  = PetscBinaryRead(fullfile(file(1).folder,file(1).name));
     data  = reshape(data,  [dof, length(data)/dof]);
