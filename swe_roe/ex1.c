@@ -205,7 +205,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   if (save == 1) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep-1);
+    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep - 1);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
