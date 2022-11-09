@@ -947,6 +947,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscInt cellOffset = edges->cell_offset[iedge];
     PetscInt l          = edges->cell_ids[cellOffset];
     PetscInt r          = edges->cell_ids[cellOffset + 1];
+    PetscReal edgeLen   = edges->length[iedge];
 
     PetscReal sn, cn;
 
@@ -978,6 +979,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           PetscReal hvl = x_ptr[l * dof + 2];
           PetscReal hur = x_ptr[r * dof + 1];
           PetscReal hvr = x_ptr[r * dof + 2];
+          PetscReal areal = cells->area[l];
+          PetscReal arear = cells->area[r];
 
           PetscReal ur, vr, ul, vl;
 
@@ -988,8 +991,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
 
           for (PetscInt idof = 0; idof < dof; idof++) {
-            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof];
-            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof];
+            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof]*edgeLen/areal;
+            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof]*edgeLen/arear;
           }
 
         }
@@ -1017,8 +1020,10 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+
+        PetscReal arear = cells->area[r];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof];
+          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof]*edgeLen/arear;
         }
 
       } else if (bl == 0 && br == 1 ) {
@@ -1043,8 +1048,10 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+
+        PetscReal areal = cells->area[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof];
+          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof]*edgeLen/areal;
         }
 
       }
@@ -1095,11 +1102,12 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
 
+        PetscReal areal = cells->area[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
           if (!bnd_cell_order_flipped) {
-            f_ptr[l * dof + idof] -= flux[idof];
+            f_ptr[l * dof + idof] -= flux[idof]*edgeLen/areal;
           } else {
-            f_ptr[l * dof + idof] += flux[idof];
+            f_ptr[l * dof + idof] += flux[idof]*edgeLen/areal;
           }
         }
       }
