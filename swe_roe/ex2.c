@@ -682,7 +682,7 @@ static PetscErrorCode CreateMesh(User user) {
   PetscCall(PopulateCellsFromDM(user->dm, &mesh_ptr->cells, &mesh_ptr->num_cells_local));
   PetscCall(PopulateEdgesFromDM(user->dm, &mesh_ptr->edges));
   PetscCall(PopulateVerticesFromDM(user->dm, &mesh_ptr->vertices));
-  //PetscCall(SaveNaturalCellIDs(user->dm, &mesh_ptr->cells, user->rank));
+  // PetscCall(SaveNaturalCellIDs(user->dm, &mesh_ptr->cells, user->rank));
 
   PetscFunctionReturn(0);
 }
@@ -761,18 +761,18 @@ PetscErrorCode AddBuildings(User user) {
                 |<---------------- 200[m] -------------->|
   */
 
-  RDyMesh *mesh = user->mesh;
+  RDyMesh *mesh  = user->mesh;
   RDyCell *cells = &mesh->cells;
 
   PetscInt nbnd_1 = 0, nbnd_2 = 0;
-  for (PetscInt icell=0; icell<mesh->num_cells_local; icell++) {
+  for (PetscInt icell = 0; icell < mesh->num_cells_local; icell++) {
     PetscReal xc = cells->centroid[icell].X[1];
     PetscReal yc = cells->centroid[icell].X[0];
     if (yc < bu && xc >= bl && xc < br) {
-      b_ptr[icell*3 + 0] = 1.0;
+      b_ptr[icell * 3 + 0] = 1.0;
       nbnd_1++;
     } else if (yc >= bd && xc >= bl && xc < br) {
-      b_ptr[icell*3 + 0] = 1.0;
+      b_ptr[icell * 3 + 0] = 1.0;
       nbnd_2++;
     }
   }
@@ -944,10 +944,10 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   PetscInt dof = 3;
   for (PetscInt iedge = 0; iedge < mesh->num_edges; iedge++) {
-    PetscInt cellOffset = edges->cell_offset[iedge];
-    PetscInt l          = edges->cell_ids[cellOffset];
-    PetscInt r          = edges->cell_ids[cellOffset + 1];
-    PetscReal edgeLen   = edges->length[iedge];
+    PetscInt  cellOffset = edges->cell_offset[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscReal edgeLen    = edges->length[iedge];
 
     PetscReal sn, cn;
 
@@ -975,10 +975,10 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       if (bl == 0 && br == 0) {
         // Both, left and right cells are not boundary walls
         if (!(hr < user->tiny_h && hl < user->tiny_h)) {
-          PetscReal hul = x_ptr[l * dof + 1];
-          PetscReal hvl = x_ptr[l * dof + 2];
-          PetscReal hur = x_ptr[r * dof + 1];
-          PetscReal hvr = x_ptr[r * dof + 2];
+          PetscReal hul   = x_ptr[l * dof + 1];
+          PetscReal hvl   = x_ptr[l * dof + 2];
+          PetscReal hur   = x_ptr[r * dof + 1];
+          PetscReal hvr   = x_ptr[r * dof + 2];
           PetscReal areal = cells->area[l];
           PetscReal arear = cells->area[r];
 
@@ -991,17 +991,15 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
 
           for (PetscInt idof = 0; idof < dof; idof++) {
-            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof]*edgeLen/areal;
-            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof]*edgeLen/arear;
+            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
+            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
           }
-
         }
 
       } else if (bl == 1 && br == 0) {
-
         // Left cell is a boundary wall and right cell is an internal cell
 
-        PetscReal hr = x_ptr[r * dof + 0];
+        PetscReal hr  = x_ptr[r * dof + 0];
         PetscReal hur = x_ptr[r * dof + 1];
         PetscReal hvr = x_ptr[r * dof + 2];
 
@@ -1011,11 +1009,11 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         PetscReal hl = hr;
         PetscReal ul, vl;
         if (is_edge_vertical) {
-          ul =  ur;
+          ul = ur;
           vl = -vr;
         } else {
           ul = -ur;
-          vl =  vr;
+          vl = vr;
         }
 
         PetscReal flux[3], amax;
@@ -1023,13 +1021,13 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal arear = cells->area[r];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof]*edgeLen/arear;
+          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
         }
 
-      } else if (bl == 0 && br == 1 ) {
+      } else if (bl == 0 && br == 1) {
         // Left cell is an internal cell and right cell is a boundary wall
 
-        PetscReal hl = x_ptr[l * dof + 0];
+        PetscReal hl  = x_ptr[l * dof + 0];
         PetscReal hul = x_ptr[l * dof + 1];
         PetscReal hvl = x_ptr[l * dof + 2];
 
@@ -1039,11 +1037,11 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         PetscReal hr = hl;
         PetscReal ur, vr;
         if (is_edge_vertical) {
-          ur =  ul;
+          ur = ul;
           vr = -vl;
         } else {
           ur = -ul;
-          vr =  vl;
+          vr = vl;
         }
 
         PetscReal flux[3], amax;
@@ -1051,9 +1049,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal areal = cells->area[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof]*edgeLen/areal;
+          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
         }
-
       }
 
     } else if (cells->is_local[l] && b_ptr[l * dof + 0] == 0) {
@@ -1105,9 +1102,9 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         PetscReal areal = cells->area[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
           if (!bnd_cell_order_flipped) {
-            f_ptr[l * dof + idof] -= flux[idof]*edgeLen/areal;
+            f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
           } else {
-            f_ptr[l * dof + idof] += flux[idof]*edgeLen/areal;
+            f_ptr[l * dof + idof] += flux[idof] * edgeLen / areal;
           }
         }
       }
@@ -1136,7 +1133,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(VecView(user->B, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
-
   }
 
   PetscFunctionReturn(0);
