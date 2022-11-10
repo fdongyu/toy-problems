@@ -177,9 +177,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
   MPI_Comm_size(user->comm, &user->comm_size);
   MPI_Comm_rank(user->comm, &user->rank);
 
-  PetscErrorCode ierr;
-  ierr = PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
-  PetscCall(ierr);
+  PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   {
     PetscCall(PetscOptionsInt("-Nx", "Number of cells in X", "", user->Nx, &user->Nx, NULL));
     PetscCall(PetscOptionsInt("-Ny", "Number of cells in Y", "", user->Ny, &user->Ny, NULL));
@@ -194,9 +192,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
     PetscCall(PetscOptionsBool("-save", "save outputs", "", user->save, &user->save, NULL));
     PetscCall(PetscOptionsString("-mesh_filename", "The mesh file", "ex2.c", user->filename, user->filename, PETSC_MAX_PATH_LEN, NULL));
   }
-  ierr = PetscOptionsEnd();
+  PetscOptionsEnd();
 
-  PetscCall(ierr);
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
