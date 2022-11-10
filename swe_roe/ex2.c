@@ -177,9 +177,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
   MPI_Comm_size(user->comm, &user->comm_size);
   MPI_Comm_rank(user->comm, &user->rank);
 
-  PetscErrorCode ierr;
-  ierr = PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
-  PetscCall(ierr);
+  PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   {
     PetscCall(PetscOptionsInt("-Nx", "Number of cells in X", "", user->Nx, &user->Nx, NULL));
     PetscCall(PetscOptionsInt("-Ny", "Number of cells in Y", "", user->Ny, &user->Ny, NULL));
@@ -194,9 +192,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
     PetscCall(PetscOptionsBool("-save", "save outputs", "", user->save, &user->save, NULL));
     PetscCall(PetscOptionsString("-mesh_filename", "The mesh file", "ex2.c", user->filename, user->filename, PETSC_MAX_PATH_LEN, NULL));
   }
-  ierr = PetscOptionsEnd();
+  PetscOptionsEnd();
 
-  PetscCall(ierr);
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
@@ -597,38 +594,44 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
     PetscCall(DMGetNumFields(dm, &num_fields));
 
     // Create the natural vector
-    Vec natural;
-    PetscCall(DMCreateGlobalVector(dm, &natural));
-    PetscInt natural_size = 0, cum_natural_size = 0;
+    Vec      natural;
+    PetscInt natural_size = 0, natural_start;
+    PetscCall(DMPlexCreateNaturalVector(dm, &natural));
+    PetscCall(PetscObjectSetName((PetscObject)natural, "Natural Vec"));
     PetscCall(VecGetLocalSize(natural, &natural_size));
-    PetscCall(MPI_Scan(&natural_size, &cum_natural_size, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD));
+    PetscCall(VecGetOwnershipRange(natural, &natural_start, NULL));
 
     // Add entries in the natural vector
     PetscScalar *entries;
     PetscCall(VecGetArray(natural, &entries));
     for (PetscInt i = 0; i < natural_size; ++i) {
       if (i % num_fields == 0) {
-        entries[i] = i / num_fields + cum_natural_size / num_fields - natural_size / num_fields;
+        entries[i] = (natural_start + i) / num_fields;
       } else {
-        entries[i] = -1 - rank;
+        entries[i] = -(rank + 1);
       }
     }
     PetscCall(VecRestoreArray(natural, &entries));
-    VecView(natural, PETSC_VIEWER_STDOUT_WORLD);
+    PetscCall(VecView(natural, PETSC_VIEWER_STDOUT_WORLD));
 
     // Map natural IDs in global order
     Vec global;
     PetscCall(DMCreateGlobalVector(dm, &global));
+    PetscCall(PetscObjectSetName((PetscObject)global, "Global Vec"));
     PetscCall(DMPlexNaturalToGlobalBegin(dm, natural, global));
     PetscCall(DMPlexNaturalToGlobalEnd(dm, natural, global));
-    VecView(global, PETSC_VIEWER_STDOUT_WORLD);
+    PetscCall(VecView(global, PETSC_VIEWER_STDOUT_WORLD));
 
     // Map natural IDs in local order
-    Vec local;
+    Vec         local;
+    PetscViewer selfviewer;
     PetscCall(DMCreateLocalVector(dm, &local));
+    PetscCall(PetscObjectSetName((PetscObject)local, "Local Vec"));
     PetscCall(DMGlobalToLocalBegin(dm, global, INSERT_VALUES, local));
     PetscCall(DMGlobalToLocalEnd(dm, global, INSERT_VALUES, local));
-    VecView(local, PETSC_VIEWER_STDOUT_WORLD);
+    PetscCall(PetscViewerGetSubViewer(PETSC_VIEWER_STDOUT_WORLD, PETSC_COMM_SELF, &selfviewer));
+    PetscCall(VecView(local, selfviewer));
+    PetscCall(PetscViewerRestoreSubViewer(PETSC_VIEWER_STDOUT_WORLD, PETSC_COMM_SELF, &selfviewer));
 
     // Save natural IDs
     PetscInt local_size;
@@ -682,8 +685,51 @@ static PetscErrorCode CreateMesh(User user) {
   PetscCall(PopulateCellsFromDM(user->dm, &mesh_ptr->cells, &mesh_ptr->num_cells_local));
   PetscCall(PopulateEdgesFromDM(user->dm, &mesh_ptr->edges));
   PetscCall(PopulateVerticesFromDM(user->dm, &mesh_ptr->vertices));
-  // PetscCall(SaveNaturalCellIDs(user->dm, &mesh_ptr->cells, user->rank));
+  PetscCall(SaveNaturalCellIDs(user->dm, &mesh_ptr->cells, user->rank));
 
+  PetscFunctionReturn(0);
+}
+
+static PetscErrorCode DestroyMesh(User user) {
+  PetscFunctionBegin;
+  PetscCall(PetscFree(user->mesh->cells.id));
+  PetscCall(PetscFree(user->mesh->cells.global_id));
+  PetscCall(PetscFree(user->mesh->cells.natural_id));
+  PetscCall(PetscFree(user->mesh->cells.is_local));
+  PetscCall(PetscFree(user->mesh->cells.num_vertices));
+  PetscCall(PetscFree(user->mesh->cells.num_edges));
+  PetscCall(PetscFree(user->mesh->cells.num_neighbors));
+  PetscCall(PetscFree(user->mesh->cells.vertex_offset));
+  PetscCall(PetscFree(user->mesh->cells.edge_offset));
+  PetscCall(PetscFree(user->mesh->cells.neighbor_offset));
+  PetscCall(PetscFree(user->mesh->cells.vertex_ids));
+  PetscCall(PetscFree(user->mesh->cells.edge_ids));
+  PetscCall(PetscFree(user->mesh->cells.neighbor_ids));
+  PetscCall(PetscFree(user->mesh->cells.centroid));
+  PetscCall(PetscFree(user->mesh->cells.area));
+  PetscCall(PetscFree(user->mesh->edges.id));
+  PetscCall(PetscFree(user->mesh->edges.global_id));
+  PetscCall(PetscFree(user->mesh->edges.is_local));
+  PetscCall(PetscFree(user->mesh->edges.num_cells));
+  PetscCall(PetscFree(user->mesh->edges.vertex_ids));
+  PetscCall(PetscFree(user->mesh->edges.cell_offset));
+  PetscCall(PetscFree(user->mesh->edges.cell_ids));
+  PetscCall(PetscFree(user->mesh->edges.is_internal));
+  PetscCall(PetscFree(user->mesh->edges.normal));
+  PetscCall(PetscFree(user->mesh->edges.centroid));
+  PetscCall(PetscFree(user->mesh->edges.length));
+  PetscCall(PetscFree(user->mesh->vertices.id));
+  PetscCall(PetscFree(user->mesh->vertices.global_id));
+  PetscCall(PetscFree(user->mesh->vertices.is_local));
+  PetscCall(PetscFree(user->mesh->vertices.num_cells));
+  PetscCall(PetscFree(user->mesh->vertices.num_edges));
+  PetscCall(PetscFree(user->mesh->vertices.cell_offset));
+  PetscCall(PetscFree(user->mesh->vertices.edge_offset));
+  PetscCall(PetscFree(user->mesh->vertices.cell_ids));
+  PetscCall(PetscFree(user->mesh->vertices.edge_ids));
+  PetscCall(PetscFree(user->mesh->vertices.coordinate));
+  PetscCall(PetscFree(user->mesh->nG2A));
+  PetscCall(PetscFree(user->mesh));
   PetscFunctionReturn(0);
 }
 
@@ -1153,7 +1199,7 @@ int main(int argc, char **argv) {
   PetscCall(DMCreateGlobalVector(user->dm, &X));  // size = dof * number of cells
   PetscCall(VecDuplicate(X, &user->B));
   PetscCall(VecDuplicate(X, &R));
-  VecViewFromOptions(X, NULL, "-vec_view");
+  PetscCall(VecViewFromOptions(X, NULL, "-vec_view"));
   PetscCall(DMCreateLocalVector(user->dm, &user->localX));  // size = dof * number of cells
   PetscCall(VecDuplicate(user->localX, &user->localB));
 
@@ -1213,10 +1259,16 @@ int main(int argc, char **argv) {
     PetscCall(PetscViewerDestroy(&viewer));
   }
 
+  PetscCall(TSDestroy(&ts));
   PetscCall(VecDestroy(&X));
   PetscCall(VecDestroy(&R));
+  PetscCall(VecDestroy(&user->B));
+  PetscCall(VecDestroy(&user->localB));
+  PetscCall(VecDestroy(&user->localX));
+  PetscCall(VecDestroy(&R));
+  PetscCall(DestroyMesh(user));
   PetscCall(DMDestroy(&user->dm));
-  PetscCall(TSDestroy(&ts));
+  PetscCall(PetscFree(user));
 
   PetscCall(PetscFinalize());
 
