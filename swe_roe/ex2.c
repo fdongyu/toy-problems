@@ -227,9 +227,11 @@ static PetscErrorCode CreateDM(User user) {
   } else {
     DMPlexCreateFromFile(user->comm, user->filename, "ex2.c", PETSC_FALSE, &user->dm);
   }
+  PetscCall(DMPlexDistributeSetDefault(user->dm, PETSC_FALSE));
 
   PetscObjectSetName((PetscObject)user->dm, "Mesh");
   PetscCall(DMSetFromOptions(user->dm));
+  PetscCall(DMViewFromOptions(user->dm, NULL, "-orig_dm_view"));
 
   // Determine the number of cells, edges, and vertices of the mesh
   PetscInt cStart, cEnd;
@@ -277,6 +279,10 @@ static PetscErrorCode CreateDM(User user) {
     user->dm = dmDist;
   }
   PetscCall(DMViewFromOptions(user->dm, NULL, "-dm_view"));
+
+  PetscSF sf;
+  PetscCall(DMPlexGetGlobalToNaturalSF(user->dm, &sf));
+  PetscCall(PetscObjectViewFromOptions((PetscObject)sf, NULL, "-nat_sf_view"));
 
   PetscFunctionReturn(0);
 }
