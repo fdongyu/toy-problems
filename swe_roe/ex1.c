@@ -205,7 +205,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   if (save == 1) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
+    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep - 1);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
@@ -597,7 +597,7 @@ int main(int argc, char **argv) {
   user->Nx = user->Lx / user->dx;
   user->Ny = user->Ly / user->dy;
   user->Nt = user->max_time / user->dt;
-  PetscPrintf(user->comm, "Max simulation time is %f\n", user->max_time);
+  PetscPrintf(user->comm, "Max simulation time is %f; \n", user->max_time);
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initialize DMDA
@@ -698,7 +698,7 @@ int main(int argc, char **argv) {
 
   if (user->save == 2) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->Nt);
+    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", user->Nx, user->Ny, user->dt, user->tstep);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(user->comm, fname, FILE_MODE_WRITE, &viewer));
