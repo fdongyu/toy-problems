@@ -278,11 +278,11 @@ static PetscErrorCode CreateDM(User user) {
   }
   PetscCall(DMViewFromOptions(user->dm, NULL, "-dm_view"));
 
-/*
-  PetscSF sf;
-  PetscCall(DMPlexGetGlobalToNaturalSF(user->dm, &sf));
-  PetscCall(PetscObjectViewFromOptions((PetscObject)sf, NULL, "-nat_sf_view"));
-*/
+  /*
+    PetscSF sf;
+    PetscCall(DMPlexGetGlobalToNaturalSF(user->dm, &sf));
+    PetscCall(PetscObjectViewFromOptions((PetscObject)sf, NULL, "-nat_sf_view"));
+  */
 
   PetscFunctionReturn(0);
 }
