@@ -20,10 +20,7 @@ static char help[] = "Partial 2D dam break problem.\n";
   }
 
 /// Returns true iff start <= closure < end.
-PetscBool IsClosureWithinBounds(PetscInt closure, PetscInt start, PetscInt end)
-{
-  return (closure >= start) && (closure < end);
-}
+PetscBool IsClosureWithinBounds(PetscInt closure, PetscInt start, PetscInt end) { return (closure >= start) && (closure < end); }
 
 /// a point in R^3
 typedef struct {
@@ -894,7 +891,7 @@ static PetscErrorCode CreateDM(RDyApp app) {
 static PetscErrorCode SetInitialCondition(RDyApp app, Vec X) {
   PetscFunctionBegin;
 
-  RDyMesh *mesh  = &app->mesh;
+  RDyMesh  *mesh  = &app->mesh;
   RDyCells *cells = &mesh->cells;
 
   PetscCall(VecZeroEntries(X));
@@ -961,7 +958,7 @@ PetscErrorCode AddBuildings(RDyApp app) {
                 |<---------------- 200[m] -------------->|
   */
 
-  RDyMesh *mesh  = &app->mesh;
+  RDyMesh  *mesh  = &app->mesh;
   RDyCells *cells = &mesh->cells;
 
   PetscInt nbnd_1 = 0, nbnd_2 = 0;
@@ -1124,8 +1121,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   RDyApp app = ptr;
 
-  DM       dm    = app->dm;
-  RDyMesh *mesh  = &app->mesh;
+  DM        dm    = app->dm;
+  RDyMesh  *mesh  = &app->mesh;
   RDyCells *cells = &mesh->cells;
   RDyEdges *edges = &mesh->edges;
   // RDyVertices *vertices = &mesh->vertices;
