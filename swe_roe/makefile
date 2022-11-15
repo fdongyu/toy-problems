@@ -1,4 +1,3 @@
-
 CFLAGS          =
 FFLAGS          =
 CPPFLAGS        =
@@ -11,3 +10,6 @@ CLEANFILES      = SA-data/*
 include ${PETSC_DIR}/lib/petsc/conf/variables
 include ${PETSC_DIR}/lib/petsc/conf/rules
 include ${PETSC_DIR}/lib/petsc/conf/test
+
+all: ex1 ex1f ex2
+.PHONY: all
