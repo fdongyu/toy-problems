@@ -620,7 +620,6 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
       }
     }
     PetscCall(VecRestoreArray(natural, &entries));
-    PetscCall(VecView(natural, PETSC_VIEWER_STDOUT_WORLD));
 
     // Map natural IDs in global order
     Vec global;
@@ -628,7 +627,6 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
     PetscCall(PetscObjectSetName((PetscObject)global, "Global Vec"));
     PetscCall(DMPlexNaturalToGlobalBegin(dm, natural, global));
     PetscCall(DMPlexNaturalToGlobalEnd(dm, natural, global));
-    PetscCall(VecView(global, PETSC_VIEWER_STDOUT_WORLD));
 
     // Map natural IDs in local order
     Vec         local;
@@ -638,7 +636,6 @@ static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCell *cells, PetscInt rank) {
     PetscCall(DMGlobalToLocalBegin(dm, global, INSERT_VALUES, local));
     PetscCall(DMGlobalToLocalEnd(dm, global, INSERT_VALUES, local));
     PetscCall(PetscViewerGetSubViewer(PETSC_VIEWER_STDOUT_WORLD, PETSC_COMM_SELF, &selfviewer));
-    PetscCall(VecView(local, selfviewer));
     PetscCall(PetscViewerRestoreSubViewer(PETSC_VIEWER_STDOUT_WORLD, PETSC_COMM_SELF, &selfviewer));
 
     // Save natural IDs
