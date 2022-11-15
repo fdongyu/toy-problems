@@ -6,9 +6,17 @@ function show_results(example_number)
 
 close all
 
+
 if ~exist('PetscBinaryRead')
-    error(['Please add PETSc MATLAB files before calling this script via: ' char(10) ...
-        'addpath <path-to-petsc>/share/petsc/matlab/'])
+
+    % Let's try to get information about PETSc from environment variable
+    [~,PETSC_DIR] = system('echo $PETSC_DIR');
+    if (exists(PETSC_DIR))
+        addpath([PETSC_DIR(1:end-1) '/share/petsc/matlab/'])
+    else
+        error(['Please add PETSc MATLAB files before calling this script via: ' char(10) ...
+           'addpath <path-to-petsc>/share/petsc/matlab/'])
+   end
 end
 
 switch example_number

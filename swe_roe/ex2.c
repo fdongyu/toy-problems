@@ -197,13 +197,11 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, User user) {
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
-  user->Lx = user->Nx * 1.0;
-  user->Ly = user->Ny * 1.0;
+  user->Lx = user->Nx * user->dx;
+  user->Ly = user->Ny * user->dy;
 
   PetscReal max_time = user->Nt * user->dt;
-  if (!user->rank) {
-    PetscPrintf(user->comm, "Max simulation time is %f\n", max_time);
-  }
+  PetscPrintf(user->comm, "Max simulation time is %f\n", max_time);
 
   PetscFunctionReturn(0);
 }
