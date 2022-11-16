@@ -24,7 +24,8 @@ static char help[] = "Partial 2D dam break problem.\n";
 /// NOTE: the error code is not captured by the caller. Since we use the
 /// NOTE: PetscCall(func(args)) convention, this shouldn't be an issue.
 #define RDyFill(type, memory, count, value) \
-  0; for (size_t i = 0; i < (count); ++i) {    \
+  0;                                        \
+  for (size_t i = 0; i < (count); ++i) {    \
     memory[i] = (type)value;                \
   }
 
