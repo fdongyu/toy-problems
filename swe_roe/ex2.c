@@ -17,9 +17,14 @@ static char help[] = "Partial 2D dam break problem.\n";
 #define RDyFree(memory) PetscFree(memory)
 
 /// Fills an array of the given type and given element count with the given
-/// value, performing an explicit cast for each value.
+/// value, performing an explicit cast for each value. Returns a 0 error code,
+/// as it cannot fail under detectable conditions.
+/// NOTE: Note the leading "0", which provides the return code. This trick may
+/// NOTE: produce an "unused value" warning with certain compiler settings if
+/// NOTE: the error code is not captured by the caller. Since we use the
+/// NOTE: PetscCall(func(args)) convention, this shouldn't be an issue.
 #define RDyFill(type, memory, count, value) \
-  for (size_t i = 0; i < (count); ++i) {    \
+  0; for (size_t i = 0; i < (count); ++i) {    \
     memory[i] = (type)value;                \
   }
 
@@ -98,32 +103,32 @@ PetscErrorCode RDyCellsCreate(PetscInt num_cells, RDyCells *cells) {
   PetscCall(RDyAlloc(PetscInt, num_cells, &cells->ids));
   PetscCall(RDyAlloc(PetscInt, num_cells, &cells->global_ids));
   PetscCall(RDyAlloc(PetscInt, num_cells, &cells->natural_ids));
-  RDyFill(PetscInt, cells->global_ids, num_cells, -1);
-  RDyFill(PetscInt, cells->natural_ids, num_cells, -1);
+  PetscCall(RDyFill(PetscInt, cells->global_ids, num_cells, -1));
+  PetscCall(RDyFill(PetscInt, cells->natural_ids, num_cells, -1));
 
   PetscCall(RDyAlloc(PetscBool, num_cells, &cells->is_local));
-  RDyFill(PetscInt, cells->is_local, num_cells, PETSC_FALSE);
+  PetscCall(RDyFill(PetscInt, cells->is_local, num_cells, PETSC_FALSE));
 
   PetscCall(RDyAlloc(PetscInt, num_cells, &cells->num_vertices));
   PetscCall(RDyAlloc(PetscInt, num_cells, &cells->num_edges));
   PetscCall(RDyAlloc(PetscInt, num_cells, &cells->num_neighbors));
-  RDyFill(PetscInt, cells->num_vertices, num_cells, -1);
-  RDyFill(PetscInt, cells->num_edges, num_cells, -1);
-  RDyFill(PetscInt, cells->num_neighbors, num_cells, -1);
+  PetscCall(RDyFill(PetscInt, cells->num_vertices, num_cells, -1));
+  PetscCall(RDyFill(PetscInt, cells->num_edges, num_cells, -1));
+  PetscCall(RDyFill(PetscInt, cells->num_neighbors, num_cells, -1));
 
   PetscCall(RDyAlloc(PetscInt, num_cells + 1, &cells->vertex_offsets));
   PetscCall(RDyAlloc(PetscInt, num_cells + 1, &cells->edge_offsets));
   PetscCall(RDyAlloc(PetscInt, num_cells + 1, &cells->neighbor_offsets));
-  RDyFill(PetscInt, cells->vertex_offsets, num_cells + 1, -1);
-  RDyFill(PetscInt, cells->edge_offsets, num_cells + 1, -1);
-  RDyFill(PetscInt, cells->neighbor_offsets, num_cells + 1, -1);
+  PetscCall(RDyFill(PetscInt, cells->vertex_offsets, num_cells + 1, -1));
+  PetscCall(RDyFill(PetscInt, cells->edge_offsets, num_cells + 1, -1));
+  PetscCall(RDyFill(PetscInt, cells->neighbor_offsets, num_cells + 1, -1));
 
   PetscCall(RDyAlloc(PetscInt, num_cells * vertices_per_cell, &cells->vertex_ids));
   PetscCall(RDyAlloc(PetscInt, num_cells * edges_per_cell, &cells->edge_ids));
   PetscCall(RDyAlloc(PetscInt, num_cells * neighbors_per_cell, &cells->neighbor_ids));
-  RDyFill(PetscInt, cells->vertex_ids, num_cells * vertices_per_cell, -1);
-  RDyFill(PetscInt, cells->edge_ids, num_cells * edges_per_cell, -1);
-  RDyFill(PetscInt, cells->neighbor_ids, num_cells * neighbors_per_cell, -1);
+  PetscCall(RDyFill(PetscInt, cells->vertex_ids, num_cells * vertices_per_cell, -1));
+  PetscCall(RDyFill(PetscInt, cells->edge_ids, num_cells * edges_per_cell, -1));
+  PetscCall(RDyFill(PetscInt, cells->neighbor_ids, num_cells * neighbors_per_cell, -1));
 
   PetscCall(RDyAlloc(RDyPoint, num_cells, &cells->centroids));
   PetscCall(RDyAlloc(PetscReal, num_cells, &cells->areas));
@@ -277,7 +282,7 @@ PetscErrorCode RDyVerticesCreate(PetscInt num_vertices, RDyVertices *vertices) {
   PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->global_ids));
   PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->num_cells));
   PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->num_edges));
-  RDyFill(PetscInt, vertices->global_ids, num_vertices, -1);
+  PetscCall(RDyFill(PetscInt, vertices->global_ids, num_vertices, -1));
 
   PetscCall(RDyAlloc(PetscBool, num_vertices, &vertices->is_local));
 
@@ -288,8 +293,8 @@ PetscErrorCode RDyVerticesCreate(PetscInt num_vertices, RDyVertices *vertices) {
 
   PetscCall(RDyAlloc(PetscInt, num_vertices * edges_per_vertex, &vertices->edge_ids));
   PetscCall(RDyAlloc(PetscInt, num_vertices * cells_per_vertex, &vertices->cell_ids));
-  RDyFill(PetscInt, vertices->edge_ids, num_vertices * edges_per_vertex, -1);
-  RDyFill(PetscInt, vertices->cell_ids, num_vertices * cells_per_vertex, -1);
+  PetscCall(RDyFill(PetscInt, vertices->edge_ids, num_vertices * edges_per_vertex, -1));
+  PetscCall(RDyFill(PetscInt, vertices->cell_ids, num_vertices * cells_per_vertex, -1));
 
   for (PetscInt ivertex = 0; ivertex < num_vertices; ivertex++) {
     vertices->ids[ivertex] = ivertex;
@@ -435,16 +440,16 @@ PetscErrorCode RDyEdgesCreate(PetscInt num_edges, RDyEdges *edges) {
   PetscCall(RDyAlloc(PetscInt, num_edges, &edges->global_ids));
   PetscCall(RDyAlloc(PetscInt, num_edges, &edges->num_cells));
   PetscCall(RDyAlloc(PetscInt, num_edges, &edges->vertex_ids));
-  RDyFill(PetscInt, edges->global_ids, num_edges, -1);
-  RDyFill(PetscInt, edges->num_cells, num_edges, -1);
-  RDyFill(PetscInt, edges->vertex_ids, num_edges, -1);
+  PetscCall(RDyFill(PetscInt, edges->global_ids, num_edges, -1));
+  PetscCall(RDyFill(PetscInt, edges->num_cells, num_edges, -1));
+  PetscCall(RDyFill(PetscInt, edges->vertex_ids, num_edges, -1));
 
   PetscCall(RDyAlloc(PetscBool, num_edges, &edges->is_local));
   PetscCall(RDyAlloc(PetscBool, num_edges, &edges->is_internal));
 
   PetscCall(RDyAlloc(PetscInt, num_edges + 1, &edges->cell_offsets));
   PetscCall(RDyAlloc(PetscInt, num_edges * cells_per_edge, &edges->cell_ids));
-  RDyFill(PetscInt, edges->cell_ids, num_edges * cells_per_edge, -1);
+  PetscCall(RDyFill(PetscInt, edges->cell_ids, num_edges * cells_per_edge, -1));
 
   PetscCall(RDyAlloc(RDyPoint, num_edges, &edges->centroids));
   PetscCall(RDyAlloc(RDyVector, num_edges, &edges->normals));
@@ -754,7 +759,7 @@ typedef struct _n_RDyApp *RDyApp;
 PetscErrorCode RDyAllocate_IntegerArray_1D(PetscInt **array_1D, PetscInt ndim_1) {
   PetscFunctionBegin;
   PetscCall(RDyAlloc(PetscInt, ndim_1, array_1D));
-  RDyFill(PetscInt, *array_1D, ndim_1, -1);
+  PetscCall(RDyFill(PetscInt, *array_1D, ndim_1, -1));
   PetscFunctionReturn(0);
 }
 
