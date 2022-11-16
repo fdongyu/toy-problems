@@ -8,15 +8,19 @@ static char help[] = "Partial 2D dam break problem.\n";
 #include <petscts.h>
 #include <petscvec.h>
 
-/// Allocates an array of the given type, with the given element count, placing
-/// the allocated memory in the given result pointer. Memory is zeroed.
+/// Allocates a block of memory of the given type, consisting of count
+/// contiguous elements and placing the allocated memory in the given result
+/// pointer. Memory is zero-initialized. Returns a PetscErrorCode.
 #define RDyAlloc(type, count, result) PetscCalloc1(sizeof(type) * (count), result)
+
+/// Frees a block of memory allocated by RDyAlloc. Returns a PetscErrorCode.
+#define RDyFree(memory) PetscFree(memory)
 
 /// Fills an array of the given type and given element count with the given
 /// value, performing an explicit cast for each value.
-#define RDyFill(type, array, count, value) \
-  for (size_t i = 0; i < (count); ++i) {   \
-    array[i] = (type)value;                \
+#define RDyFill(type, memory, count, value) \
+  for (size_t i = 0; i < (count); ++i) {    \
+    memory[i] = (type)value;                \
   }
 
 /// Returns true iff start <= closure < end.
@@ -209,21 +213,21 @@ PetscErrorCode RDyCellsCreateFromDM(DM dm, RDyCells *cells) {
 PetscErrorCode RDyCellsDestroy(RDyCells cells) {
   PetscFunctionBegin;
 
-  PetscCall(PetscFree(cells.ids));
-  PetscCall(PetscFree(cells.global_ids));
-  PetscCall(PetscFree(cells.natural_ids));
-  PetscCall(PetscFree(cells.is_local));
-  PetscCall(PetscFree(cells.num_vertices));
-  PetscCall(PetscFree(cells.num_edges));
-  PetscCall(PetscFree(cells.num_neighbors));
-  PetscCall(PetscFree(cells.vertex_offsets));
-  PetscCall(PetscFree(cells.edge_offsets));
-  PetscCall(PetscFree(cells.neighbor_offsets));
-  PetscCall(PetscFree(cells.vertex_ids));
-  PetscCall(PetscFree(cells.edge_ids));
-  PetscCall(PetscFree(cells.neighbor_ids));
-  PetscCall(PetscFree(cells.centroids));
-  PetscCall(PetscFree(cells.areas));
+  PetscCall(RDyFree(cells.ids));
+  PetscCall(RDyFree(cells.global_ids));
+  PetscCall(RDyFree(cells.natural_ids));
+  PetscCall(RDyFree(cells.is_local));
+  PetscCall(RDyFree(cells.num_vertices));
+  PetscCall(RDyFree(cells.num_edges));
+  PetscCall(RDyFree(cells.num_neighbors));
+  PetscCall(RDyFree(cells.vertex_offsets));
+  PetscCall(RDyFree(cells.edge_offsets));
+  PetscCall(RDyFree(cells.neighbor_offsets));
+  PetscCall(RDyFree(cells.vertex_ids));
+  PetscCall(RDyFree(cells.edge_ids));
+  PetscCall(RDyFree(cells.neighbor_ids));
+  PetscCall(RDyFree(cells.centroids));
+  PetscCall(RDyFree(cells.areas));
 
   PetscFunctionReturn(0);
 }
@@ -369,16 +373,16 @@ PetscErrorCode RDyVerticesCreateFromDM(DM dm, RDyVertices *vertices) {
 PetscErrorCode RDyVerticesDestroy(RDyVertices vertices) {
   PetscFunctionBegin;
 
-  PetscCall(PetscFree(vertices.ids));
-  PetscCall(PetscFree(vertices.global_ids));
-  PetscCall(PetscFree(vertices.is_local));
-  PetscCall(PetscFree(vertices.num_cells));
-  PetscCall(PetscFree(vertices.num_edges));
-  PetscCall(PetscFree(vertices.cell_offsets));
-  PetscCall(PetscFree(vertices.edge_offsets));
-  PetscCall(PetscFree(vertices.cell_ids));
-  PetscCall(PetscFree(vertices.edge_ids));
-  PetscCall(PetscFree(vertices.points));
+  PetscCall(RDyFree(vertices.ids));
+  PetscCall(RDyFree(vertices.global_ids));
+  PetscCall(RDyFree(vertices.is_local));
+  PetscCall(RDyFree(vertices.num_cells));
+  PetscCall(RDyFree(vertices.num_edges));
+  PetscCall(RDyFree(vertices.cell_offsets));
+  PetscCall(RDyFree(vertices.edge_offsets));
+  PetscCall(RDyFree(vertices.cell_ids));
+  PetscCall(RDyFree(vertices.edge_ids));
+  PetscCall(RDyFree(vertices.points));
 
   PetscFunctionReturn(0);
 }
@@ -520,17 +524,17 @@ PetscErrorCode RDyEdgesCreateFromDM(DM dm, RDyEdges *edges) {
 PetscErrorCode RDyEdgesDestroy(RDyEdges edges) {
   PetscFunctionBegin;
 
-  PetscCall(PetscFree(edges.ids));
-  PetscCall(PetscFree(edges.global_ids));
-  PetscCall(PetscFree(edges.is_local));
-  PetscCall(PetscFree(edges.num_cells));
-  PetscCall(PetscFree(edges.vertex_ids));
-  PetscCall(PetscFree(edges.cell_offsets));
-  PetscCall(PetscFree(edges.cell_ids));
-  PetscCall(PetscFree(edges.is_internal));
-  PetscCall(PetscFree(edges.normals));
-  PetscCall(PetscFree(edges.centroids));
-  PetscCall(PetscFree(edges.lengths));
+  PetscCall(RDyFree(edges.ids));
+  PetscCall(RDyFree(edges.global_ids));
+  PetscCall(RDyFree(edges.is_local));
+  PetscCall(RDyFree(edges.num_cells));
+  PetscCall(RDyFree(edges.vertex_ids));
+  PetscCall(RDyFree(edges.cell_offsets));
+  PetscCall(RDyFree(edges.cell_ids));
+  PetscCall(RDyFree(edges.is_internal));
+  PetscCall(RDyFree(edges.normals));
+  PetscCall(RDyFree(edges.centroids));
+  PetscCall(RDyFree(edges.lengths));
 
   PetscFunctionReturn(0);
 }
@@ -693,7 +697,7 @@ PetscErrorCode RDyMeshDestroy(RDyMesh mesh) {
   PetscCall(RDyCellsDestroy(mesh.cells));
   PetscCall(RDyEdgesDestroy(mesh.edges));
   PetscCall(RDyVerticesDestroy(mesh.vertices));
-  PetscCall(PetscFree(mesh.nG2A));
+  PetscCall(RDyFree(mesh.nG2A));
   PetscFunctionReturn(0);
 }
 
@@ -1419,7 +1423,7 @@ int main(int argc, char **argv) {
   PetscCall(VecDestroy(&R));
   PetscCall(RDyMeshDestroy(app->mesh));
   PetscCall(DMDestroy(&app->dm));
-  PetscCall(PetscFree(app));
+  PetscCall(RDyFree(app));
 
   PetscCall(PetscFinalize());
 
