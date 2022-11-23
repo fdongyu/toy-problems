@@ -171,10 +171,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   PetscCall(DMGlobalToLocalBegin(da, X, INSERT_VALUES, localX));
   PetscCall(DMGlobalToLocalEnd(da, X, INSERT_VALUES, localX));
-  PetscCall(DMGlobalToLocalBegin(da, user->F, INSERT_VALUES, localF));
-  PetscCall(DMGlobalToLocalEnd(da, user->F, INSERT_VALUES, localF));
-  PetscCall(DMGlobalToLocalBegin(da, user->G, INSERT_VALUES, localG));
-  PetscCall(DMGlobalToLocalEnd(da, user->G, INSERT_VALUES, localG));
 
   // Get pointers to vector data
   PetscScalar ***x_ptr, ***f_ptr, ***g_ptr, ***f_ptr1;
