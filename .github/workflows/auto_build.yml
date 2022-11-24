@@ -1,0 +1,34 @@
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Below are jobs, each of which runs sequentially.
+jobs:
+  # This job builds RDycore and runs our test suite.
+  build:
+    runs-on: ${{ matrix.os }}
+    container: coherellc/rdycore-petsc:v3.18.1
+
+    # A build matrix storing all desired configurations.
+    strategy:
+      matrix:
+        os: [ubuntu-latest] #, macos-latest]
+        build-type: [Debug] #, Release]
+
+    # Steps for building and running tests.
+    steps:
+
+    - name: Checking out repository
+      uses: actions/checkout@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build swe_roe demos (${{ matrix.build-type }})
+      run: |
+        cd swe_roe
+        make ex1
+
+
+
