@@ -1357,13 +1357,22 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1);
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
-    PetscCall(VecView(X, viewer));
+
+    Vec natural;
+    PetscCall(DMPlexCreateNaturalVector(app->dm, &natural));
+    PetscCall(DMPlexGlobalToNaturalBegin(app->dm, X, natural));
+    PetscCall(DMPlexGlobalToNaturalEnd(app->dm, X, natural));
+    PetscCall(VecView(natural, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
 
     sprintf(fname, "outputs/ex2_flux_Nx_%d_Ny_%d_dt_%f_%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1);
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
-    PetscCall(VecView(F, viewer));
+    PetscCall(DMPlexGlobalToNaturalBegin(app->dm, F, natural));
+    PetscCall(DMPlexGlobalToNaturalEnd(app->dm, F, natural));
+    PetscCall(VecView(natural, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
+
+    PetscCall(VecDestroy(&natural));
   }
 
   PetscPrintf(PETSC_COMM_SELF, "Time Step = %d, rank = %d, Courant Number = %f\n", 1, app->rank, amax_value * app->dt * 2);
@@ -1412,8 +1421,13 @@ int main(int argc, char **argv) {
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
-    PetscCall(VecView(X, viewer));
+    Vec natural;
+    PetscCall(DMPlexCreateNaturalVector(app->dm, &natural));
+    PetscCall(DMPlexGlobalToNaturalBegin(app->dm, X, natural));
+    PetscCall(DMPlexGlobalToNaturalEnd(app->dm, X, natural));
+    PetscCall(VecView(natural, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
+    PetscCall(VecDestroy(&natural));
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
@@ -1447,8 +1461,13 @@ int main(int argc, char **argv) {
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
-    PetscCall(VecView(X, viewer));
+    Vec natural;
+    PetscCall(DMPlexCreateNaturalVector(app->dm, &natural));
+    PetscCall(DMPlexGlobalToNaturalBegin(app->dm, X, natural));
+    PetscCall(DMPlexGlobalToNaturalEnd(app->dm, X, natural));
+    PetscCall(VecView(natural, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
+    PetscCall(VecDestroy(&natural));
   }
 
   PetscCall(TSDestroy(&ts));
