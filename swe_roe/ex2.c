@@ -1150,6 +1150,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(VecGetArray(app->localB, &b_ptr));
 
   PetscInt dof = 3;
+  PetscReal amax_value = 0.0;
+
   for (PetscInt iedge = 0; iedge < mesh->num_edges; iedge++) {
     PetscInt  cellOffset = edges->cell_offsets[iedge];
     PetscInt  l          = edges->cell_ids[cellOffset];
@@ -1196,6 +1198,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
           PetscReal flux[3], amax;
           PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+          amax_value = fmax(amax_value,amax);
 
           for (PetscInt idof = 0; idof < dof; idof++) {
             if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
@@ -1225,6 +1228,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+        amax_value = fmax(amax_value,amax);
 
         PetscReal arear = cells->areas[r];
         for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1253,6 +1257,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+        amax_value = fmax(amax_value,amax);
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1305,6 +1310,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
+        amax_value = fmax(amax_value,amax);
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1336,6 +1342,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscCall(VecView(F, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
   }
+
+  PetscPrintf(PETSC_COMM_SELF, "Time Step = %d, rank = %d, Courant Number = %f\n", 1, app->rank, amax_value * app->dt * 2);
 
   PetscFunctionReturn(0);
 }
