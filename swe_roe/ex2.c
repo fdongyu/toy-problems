@@ -1175,6 +1175,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
     if (r >= 0 && l >= 0) {
       // Perform computation for an internal edge
+      PetscInt nr = cells->natural_ids[r];
+      PetscInt nl = cells->natural_ids[l];
 
       PetscReal hl = x_ptr[l * dof + 0];
       PetscReal hr = x_ptr[r * dof + 0];
@@ -1183,24 +1185,23 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
       // It is assumed that the flux is computed from the left (l) cell to 'right'.
       // Check to make sure cell 'l' is actually left of the edge.
-      PetscReal direction;
       if (is_edge_vertical) {
         PetscReal yr = cells->centroids[r].X[1];
         PetscReal yl = cells->centroids[l].X[1];
         PetscReal dy_l2r = yr - yl;
         if (dy_l2r < 0.0) {
-          direction = -1.0;
+          sn = -1.0;
         } else {
-          direction = 1.0;
+          sn = 1.0;
         }
       } else {
         PetscReal xr = cells->centroids[r].X[0];
         PetscReal xl = cells->centroids[l].X[0];
         PetscReal dx_l2r = xr - xl;
         if (dx_l2r < 0.0) {
-          direction = -1.0;
+          cn = -1.0;
         } else {
-          direction = 1.0;
+          cn = 1.0;
         }
       }
 
@@ -1224,8 +1225,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           amax_value = fmax(amax_value,amax);
 
           for (PetscInt idof = 0; idof < dof; idof++) {
-            if (cells->is_local[l]) f_ptr[l * dof + idof] -= direction * flux[idof] * edgeLen / areal;
-            if (cells->is_local[r]) f_ptr[r * dof + idof] += direction * flux[idof] * edgeLen / arear;
+            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
+            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
           }
         }
 
@@ -1255,7 +1256,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal arear = cells->areas[r];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[r]) f_ptr[r * dof + idof] += direction * flux[idof] * edgeLen / arear;
+          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
         }
 
       } else if (bl == 0 && br == 1) {
@@ -1284,7 +1285,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l * dof + idof] -= direction * flux[idof] * edgeLen / areal;
+          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
         }
       }
 
