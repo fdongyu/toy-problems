@@ -901,8 +901,8 @@ static PetscErrorCode CreateAuxDM(RDyApp app) {
   PetscSection auxsec;
   PetscCall(PetscSectionCreate(app->comm, &auxsec));
 
-  PetscInt aux_nfield = 1;
-  PetscInt aux_num_field_dof[] = {1};
+  PetscInt aux_nfield             = 1;
+  PetscInt aux_num_field_dof[]    = {1};
   char     aux_field_names[1][20] = {{"Parameter"}};
   PetscCall(PetscSectionSetNumFields(auxsec, aux_nfield));
   PetscInt aux_total_num_dof = 0;
