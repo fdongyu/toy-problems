@@ -1149,7 +1149,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(VecGetArray(F, &f_ptr));
   PetscCall(VecGetArray(app->localB, &b_ptr));
 
-  PetscInt dof = 3;
+  PetscInt  dof        = 3;
   PetscReal amax_value = 0.0;
 
   for (PetscInt iedge = 0; iedge < mesh->num_edges; iedge++) {
@@ -1170,8 +1170,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
     if (r >= 0 && l >= 0) {
       // Perform computation for an internal edge
-      PetscInt nr = cells->natural_ids[r];
-      PetscInt nl = cells->natural_ids[l];
 
       PetscReal hl = x_ptr[l * dof + 0];
       PetscReal hr = x_ptr[r * dof + 0];
@@ -1183,8 +1181,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       PetscReal cn = 0.0;
       PetscReal sn = 0.0;
       if (is_edge_vertical) {
-        PetscReal yr = cells->centroids[r].X[1];
-        PetscReal yl = cells->centroids[l].X[1];
+        PetscReal yr     = cells->centroids[r].X[1];
+        PetscReal yl     = cells->centroids[l].X[1];
         PetscReal dy_l2r = yr - yl;
         if (dy_l2r < 0.0) {
           sn = -1.0;
@@ -1192,8 +1190,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           sn = 1.0;
         }
       } else {
-        PetscReal xr = cells->centroids[r].X[0];
-        PetscReal xl = cells->centroids[l].X[0];
+        PetscReal xr     = cells->centroids[r].X[0];
+        PetscReal xl     = cells->centroids[l].X[0];
         PetscReal dx_l2r = xr - xl;
         if (dx_l2r < 0.0) {
           cn = -1.0;
@@ -1219,7 +1217,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
           PetscReal flux[3], amax;
           PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-          amax_value = fmax(amax_value,amax);
+          amax_value = fmax(amax_value, amax);
 
           for (PetscInt idof = 0; idof < dof; idof++) {
             if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
@@ -1249,7 +1247,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value,amax);
+        amax_value = fmax(amax_value, amax);
 
         PetscReal arear = cells->areas[r];
         for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1278,7 +1276,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value,amax);
+        amax_value = fmax(amax_value, amax);
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1295,7 +1293,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       if (is_edge_vertical) {
         sn = 1.0;
       } else {
-        cn  = 1.0;
+        cn = 1.0;
       }
 
       PetscBool bnd_cell_order_flipped = PETSC_FALSE;
@@ -1340,7 +1338,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux[3], amax;
         PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value,amax);
+        amax_value = fmax(amax_value, amax);
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
