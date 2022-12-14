@@ -32,4 +32,5 @@ jobs:
         ./ex1 -hd 5.0 -save 2 -b -dx 10 -dy 10 -dt 0.01 -ts_max_time 0.1
         make ex2
         ./ex2 -dm_view -save -b  -hu 10.0 -hd 5.0 -save -dt 0.01 -ts_monitor -Nx 200 -Ny 200  -b -ts_max_time 0.1
+        mpiexec -n 3 ./ex2 -dm_view -save -b  -hu 10.0 -hd 5.0 -save -dt 0.01 -ts_monitor -Nx 200 -Ny 200  -b -ts_max_time 0.1
 
