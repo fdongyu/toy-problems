@@ -1158,16 +1158,11 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscInt  r          = edges->cell_ids[cellOffset + 1];
     PetscReal edgeLen    = edges->lengths[iedge];
 
-    PetscReal sn, cn;
-
-    PetscBool is_edge_vertical = PETSC_TRUE;
+    PetscBool is_edge_vertical;
     if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      sn = 1.0;
-      cn = 0.0;
+      is_edge_vertical = PETSC_TRUE;
     } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
       is_edge_vertical = PETSC_FALSE;
-      sn               = 0.0;
-      cn               = 1.0;
     } else {
       printf("The code only support quad cells with edges that align with x and y axis\n");
       exit(0);
@@ -1185,6 +1180,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
       // It is assumed that the flux is computed from the left (l) cell to 'right'.
       // Check to make sure cell 'l' is actually left of the edge.
+      PetscReal cn = 0.0;
+      PetscReal sn = 0.0;
       if (is_edge_vertical) {
         PetscReal yr = cells->centroids[r].X[1];
         PetscReal yl = cells->centroids[l].X[1];
@@ -1291,6 +1288,15 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
     } else if (cells->is_local[l] && b_ptr[l * dof + 0] == 0) {
       // Perform computation for a boundary edge
+
+      PetscReal cn = 0.0;
+      PetscReal sn = 0.0;
+
+      if (is_edge_vertical) {
+        sn = 1.0;
+      } else {
+        cn  = 1.0;
+      }
 
       PetscBool bnd_cell_order_flipped = PETSC_FALSE;
 
