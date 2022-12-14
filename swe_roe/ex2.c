@@ -1361,7 +1361,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1);
+    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
 
@@ -1372,7 +1372,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscCall(VecView(natural, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
 
-    sprintf(fname, "outputs/ex2_flux_Nx_%d_Ny_%d_dt_%f_%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1);
+    sprintf(fname, "outputs/ex2_flux_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(DMPlexGlobalToNaturalBegin(app->dm, F, natural));
     PetscCall(DMPlexGlobalToNaturalEnd(app->dm, F, natural));
@@ -1424,7 +1424,7 @@ int main(int argc, char **argv) {
   PetscCall(SetInitialCondition(app, X));
   {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_IC.dat", app->Nx, app->Ny, app->dt);
+    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_IC_np%d.dat", app->Nx, app->Ny, app->dt, app->comm_size);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
@@ -1464,7 +1464,7 @@ int main(int argc, char **argv) {
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d.dat", app->Nx, app->Ny, app->dt, app->Nt);
+    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->Nt, app->comm_size);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
