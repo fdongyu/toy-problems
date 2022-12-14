@@ -719,6 +719,8 @@ struct _n_RDyApp {
   char filename[PETSC_MAX_PATH_LEN];
   /// PETSc grid
   DM dm;
+  /// A DM for creating PETSc Vecs with 1 DOF
+  DM auxdm;
   /// Number of cells in the x direction
   PetscInt Nx;
   /// Number of cells in the y direction
@@ -885,11 +887,51 @@ static PetscErrorCode CreateDM(RDyApp app) {
   }
   PetscCall(DMViewFromOptions(app->dm, NULL, "-dm_view"));
 
-  /*
-    PetscSF sf;
-    PetscCall(DMPlexGetGlobalToNaturalSF(app->dm, &sf));
-    PetscCall(PetscObjectViewFromOptions((PetscObject)sf, NULL, "-nat_sf_view"));
-  */
+  PetscFunctionReturn(0);
+}
+
+/// Creates an auxillary PETSc DM for 1 DOFs from the main DM
+/// @param [inout] app A app data structure that is modified
+/// @return 0 on success, or a non-zero error code on failure
+static PetscErrorCode CreateAuxDM(RDyApp app) {
+  PetscFunctionBegin;
+
+  PetscCall(DMClone(app->dm, &app->auxdm));
+
+  PetscSection auxsec;
+  PetscCall(PetscSectionCreate(app->comm, &auxsec));
+
+  PetscInt aux_nfield = 1;
+  PetscInt aux_num_field_dof[] = {1};
+  char     aux_field_names[1][20] = {{"Parameter"}};
+  PetscCall(PetscSectionSetNumFields(auxsec, aux_nfield));
+  PetscInt aux_total_num_dof = 0;
+  for (PetscInt ifield = 0; ifield < aux_nfield; ifield++) {
+    PetscCall(PetscSectionSetFieldName(auxsec, ifield, &aux_field_names[ifield][0]));
+    PetscCall(PetscSectionSetFieldComponents(auxsec, ifield, aux_num_field_dof[ifield]));
+    aux_total_num_dof += aux_num_field_dof[ifield];
+  }
+
+  // Determine the number of cells, edges, and vertices of the mesh
+  PetscInt cStart, cEnd;
+  DMPlexGetHeightStratum(app->dm, 0, &cStart, &cEnd);
+
+  PetscCall(PetscSectionSetChart(auxsec, cStart, cEnd));
+  for (PetscInt c = cStart; c < cEnd; c++) {
+    for (PetscInt ifield = 0; ifield < aux_nfield; ifield++) {
+      PetscCall(PetscSectionSetFieldDof(auxsec, c, ifield, aux_num_field_dof[ifield]));
+    }
+    PetscCall(PetscSectionSetDof(auxsec, c, aux_total_num_dof));
+  }
+  PetscCall(DMSetLocalSection(app->auxdm, auxsec));
+  PetscCall(PetscSectionViewFromOptions(auxsec, NULL, "-aux_layout_view"));
+  PetscCall(PetscSectionSetUp(auxsec));
+
+  PetscSF sfMigration, sfNatural;
+  DMPlexGetMigrationSF(app->dm, &sfMigration);
+  DMPlexCreateGlobalToNaturalSF(app->auxdm, auxsec, sfMigration, &sfNatural);
+  DMPlexSetGlobalToNaturalSF(app->auxdm, sfNatural);
+  PetscSFDestroy(&sfNatural);
 
   PetscFunctionReturn(0);
 }
@@ -976,21 +1018,30 @@ PetscErrorCode AddBuildings(RDyApp app) {
     PetscReal xc = cells->centroids[icell].X[1];
     PetscReal yc = cells->centroids[icell].X[0];
     if (yc < bu && xc >= bl && xc < br) {
-      b_ptr[icell * 3 + 0] = 1.0;
+      b_ptr[icell] = 1.0;
       nbnd_1++;
     } else if (yc >= bd && xc >= bl && xc < br) {
-      b_ptr[icell * 3 + 0] = 1.0;
+      b_ptr[icell] = 1.0;
       nbnd_2++;
     }
   }
 
   PetscCall(VecRestoreArray(app->B, &b_ptr));
 
-  PetscCall(DMGlobalToLocalBegin(app->dm, app->B, INSERT_VALUES, app->localB));
-  PetscCall(DMGlobalToLocalEnd(app->dm, app->B, INSERT_VALUES, app->localB));
+  PetscCall(DMGlobalToLocalBegin(app->auxdm, app->B, INSERT_VALUES, app->localB));
+  PetscCall(DMGlobalToLocalEnd(app->auxdm, app->B, INSERT_VALUES, app->localB));
 
   PetscCall(PetscPrintf(app->comm, "Building size: bu=%d,bd=%d,bl=%d,br=%d\n", bu, bd, bl, br));
   PetscCall(PetscPrintf(app->comm, "Buildings added sucessfully!\n"));
+
+  PetscViewer viewer;
+  PetscCall(PetscViewerBinaryOpen(PETSC_COMM_SELF, "outputs/localB.dat", FILE_MODE_WRITE, &viewer));
+  PetscCall(VecView(app->localB, viewer));
+  PetscCall(PetscViewerDestroy(&viewer));
+
+  PetscCall(PetscViewerBinaryOpen(PETSC_COMM_WORLD, "outputs/B.dat", FILE_MODE_WRITE, &viewer));
+  PetscCall(VecView(app->B, viewer));
+  PetscCall(PetscViewerDestroy(&viewer));
 
   PetscFunctionReturn(0);
 }
@@ -1173,8 +1224,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
       PetscReal hl = x_ptr[l * dof + 0];
       PetscReal hr = x_ptr[r * dof + 0];
-      PetscReal bl = b_ptr[l * dof + 0];
-      PetscReal br = b_ptr[r * dof + 0];
+      PetscReal bl = b_ptr[l];
+      PetscReal br = b_ptr[r];
 
       // It is assumed that the flux is computed from the left (l) cell to 'right'.
       // Check to make sure cell 'l' is actually left of the edge.
@@ -1284,7 +1335,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         }
       }
 
-    } else if (cells->is_local[l] && b_ptr[l * dof + 0] == 0) {
+    } else if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
 
       PetscReal cn = 0.0;
@@ -1393,21 +1444,22 @@ int main(int argc, char **argv) {
   PetscCall(ProcessOptions(PETSC_COMM_WORLD, app));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
-   *  Create the DM
+   *  Create DMs
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  PetscCall(PetscPrintf(PETSC_COMM_WORLD, "1. CreateDM\n"));
+  PetscCall(PetscPrintf(PETSC_COMM_WORLD, "1. Create DMs\n"));
   PetscCall(CreateDM(app));
+  PetscCall(CreateAuxDM(app));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create vectors for solution and residual
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   Vec X, R;
   PetscCall(DMCreateGlobalVector(app->dm, &X));  // size = dof * number of cells
-  PetscCall(VecDuplicate(X, &app->B));
   PetscCall(VecDuplicate(X, &R));
   PetscCall(VecViewFromOptions(X, NULL, "-vec_view"));
   PetscCall(DMCreateLocalVector(app->dm, &app->localX));  // size = dof * number of cells
-  PetscCall(VecDuplicate(app->localX, &app->localB));
+  PetscCall(DMCreateGlobalVector(app->auxdm, &app->B));
+  PetscCall(DMCreateLocalVector(app->auxdm, &app->localB));  // size = dof * number of cells
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create the mesh
