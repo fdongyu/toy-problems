@@ -1141,92 +1141,95 @@ PetscErrorCode AddBuildings(RDyApp app) {
 /// @param [out] fij flux
 /// @param [out] amax maximum wave speed
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, PetscReal vl, PetscReal vr, PetscReal sn, PetscReal cn,
-                      PetscScalar *fij, PetscScalar *amax) {
+PetscErrorCode solver(PetscInt N, const PetscReal hl[N], const PetscReal hr[N], const PetscReal ul[N], const PetscReal ur[N], const PetscReal vl[N], const PetscReal vr[N], const PetscReal sn[N], const PetscReal cn[N],
+                      PetscReal fij[N][3], PetscReal amax[N]) {
   PetscFunctionBeginUser;
 
   PetscReal grav = 9.806;
 
-  // Compute Roe averages
-  PetscReal duml  = pow(hl, 0.5);
-  PetscReal dumr  = pow(hr, 0.5);
-  PetscReal cl    = pow(grav * hl, 0.5);
-  PetscReal cr    = pow(grav * hr, 0.5);
-  PetscReal hhat  = duml * dumr;
-  PetscReal uhat  = (duml * ul + dumr * ur) / (duml + dumr);
-  PetscReal vhat  = (duml * vl + dumr * vr) / (duml + dumr);
-  PetscReal chat  = pow(0.5 * grav * (hl + hr), 0.5);
-  PetscReal uperp = uhat * cn + vhat * sn;
+  for (PetscInt n=0; n<N; n++) {
 
-  PetscReal dh     = hr - hl;
-  PetscReal du     = ur - ul;
-  PetscReal dv     = vr - vl;
-  PetscReal dupar  = -du * sn + dv * cn;
-  PetscReal duperp = du * cn + dv * sn;
+    // Compute Roe averages
+    PetscReal duml  = pow(hl[n], 0.5);
+    PetscReal dumr  = pow(hr[n], 0.5);
+    PetscReal cl    = pow(grav * hl[n], 0.5);
+    PetscReal cr    = pow(grav * hr[n], 0.5);
+    PetscReal hhat  = duml * dumr;
+    PetscReal uhat  = (duml * ul[n] + dumr * ur[n]) / (duml + dumr);
+    PetscReal vhat  = (duml * vl[n] + dumr * vr[n]) / (duml + dumr);
+    PetscReal chat  = pow(0.5 * grav * (hl[n] + hr[n]), 0.5);
+    PetscReal uperp = uhat * cn[n] + vhat * sn[n];
 
-  PetscReal dW[3];
-  dW[0] = 0.5 * (dh - hhat * duperp / chat);
-  dW[1] = hhat * dupar;
-  dW[2] = 0.5 * (dh + hhat * duperp / chat);
+    PetscReal dh     = hr[n] - hl[n];
+    PetscReal du     = ur[n] - ul[n];
+    PetscReal dv     = vr[n] - vl[n];
+    PetscReal dupar  = -du * sn[n] + dv * cn[n];
+    PetscReal duperp = du * cn[n] + dv * sn[n];
 
-  PetscReal uperpl = ul * cn + vl * sn;
-  PetscReal uperpr = ur * cn + vr * sn;
-  PetscReal al1    = uperpl - cl;
-  PetscReal al3    = uperpl + cl;
-  PetscReal ar1    = uperpr - cr;
-  PetscReal ar3    = uperpr + cr;
+    PetscReal dW[3];
+    dW[0] = 0.5 * (dh - hhat * duperp / chat);
+    dW[1] = hhat * dupar;
+    dW[2] = 0.5 * (dh + hhat * duperp / chat);
 
-  PetscReal R[3][3];
-  R[0][0] = 1.0;
-  R[0][1] = 0.0;
-  R[0][2] = 1.0;
-  R[1][0] = uhat - chat * cn;
-  R[1][1] = -sn;
-  R[1][2] = uhat + chat * cn;
-  R[2][0] = vhat - chat * sn;
-  R[2][1] = cn;
-  R[2][2] = vhat + chat * sn;
+    PetscReal uperpl = ul[n] * cn[n] + vl[n] * sn[n];
+    PetscReal uperpr = ur[n] * cn[n] + vr[n] * sn[n];
+    PetscReal al1    = uperpl - cl;
+    PetscReal al3    = uperpl + cl;
+    PetscReal ar1    = uperpr - cr;
+    PetscReal ar3    = uperpr + cr;
 
-  PetscReal da1 = fmax(0.0, 2.0 * (ar1 - al1));
-  PetscReal da3 = fmax(0.0, 2.0 * (ar3 - al3));
-  PetscReal a1  = fabs(uperp - chat);
-  PetscReal a2  = fabs(uperp);
-  PetscReal a3  = fabs(uperp + chat);
+    PetscReal R[3][3];
+    R[0][0] = 1.0;
+    R[0][1] = 0.0;
+    R[0][2] = 1.0;
+    R[1][0] = uhat - chat * cn[n];
+    R[1][1] = -sn[n];
+    R[1][2] = uhat + chat * cn[n];
+    R[2][0] = vhat - chat * sn[n];
+    R[2][1] = cn[n];
+    R[2][2] = vhat + chat * sn[n];
 
-  // Critical flow fix
-  if (a1 < da1) {
-    a1 = 0.5 * (a1 * a1 / da1 + da1);
-  }
-  if (a3 < da3) {
-    a3 = 0.5 * (a3 * a3 / da3 + da3);
-  }
+    PetscReal da1 = fmax(0.0, 2.0 * (ar1 - al1));
+    PetscReal da3 = fmax(0.0, 2.0 * (ar3 - al3));
+    PetscReal a1  = fabs(uperp - chat);
+    PetscReal a2  = fabs(uperp);
+    PetscReal a3  = fabs(uperp + chat);
 
-  // Compute interface flux
-  PetscReal A[3][3];
-  for (PetscInt i = 0; i < 3; i++) {
-    for (PetscInt j = 0; j < 3; j++) {
-      A[i][j] = 0.0;
+    // Critical flow fix
+    if (a1 < da1) {
+      a1 = 0.5 * (a1 * a1 / da1 + da1);
     }
+    if (a3 < da3) {
+      a3 = 0.5 * (a3 * a3 / da3 + da3);
+    }
+
+    // Compute interface flux
+    PetscReal A[3][3];
+    for (PetscInt i = 0; i < 3; i++) {
+      for (PetscInt j = 0; j < 3; j++) {
+        A[i][j] = 0.0;
+      }
+    }
+    A[0][0] = a1;
+    A[1][1] = a2;
+    A[2][2] = a3;
+
+    PetscReal FL[3], FR[3];
+    FL[0] = uperpl * hl[n];
+    FL[1] = ul[n] * uperpl * hl[n] + 0.5 * grav * hl[n] * hl[n] * cn[n];
+    FL[2] = vl[n] * uperpl * hl[n] + 0.5 * grav * hl[n] * hl[n] * sn[n];
+
+    FR[0] = uperpr * hr[n];
+    FR[1] = ur[n] * uperpr * hr[n] + 0.5 * grav * hr[n] * hr[n] * cn[n];
+    FR[2] = vr[n] * uperpr * hr[n] + 0.5 * grav * hr[n] * hr[n] * sn[n];
+
+    // fij = 0.5*(FL + FR - matmul(R,matmul(A,dW))
+    fij[n][0] = 0.5 * (FL[0] + FR[0] - R[0][0] * A[0][0] * dW[0] - R[0][1] * A[1][1] * dW[1] - R[0][2] * A[2][2] * dW[2]);
+    fij[n][1] = 0.5 * (FL[1] + FR[1] - R[1][0] * A[0][0] * dW[0] - R[1][1] * A[1][1] * dW[1] - R[1][2] * A[2][2] * dW[2]);
+    fij[n][2] = 0.5 * (FL[2] + FR[2] - R[2][0] * A[0][0] * dW[0] - R[2][1] * A[1][1] * dW[1] - R[2][2] * A[2][2] * dW[2]);
+
+    amax[n] = chat + fabs(uperp);
   }
-  A[0][0] = a1;
-  A[1][1] = a2;
-  A[2][2] = a3;
-
-  PetscReal FL[3], FR[3];
-  FL[0] = uperpl * hl;
-  FL[1] = ul * uperpl * hl + 0.5 * grav * hl * hl * cn;
-  FL[2] = vl * uperpl * hl + 0.5 * grav * hl * hl * sn;
-
-  FR[0] = uperpr * hr;
-  FR[1] = ur * uperpr * hr + 0.5 * grav * hr * hr * cn;
-  FR[2] = vr * uperpr * hr + 0.5 * grav * hr * hr * sn;
-
-  // fij = 0.5*(FL + FR - matmul(R,matmul(A,dW))
-  fij[0] = 0.5 * (FL[0] + FR[0] - R[0][0] * A[0][0] * dW[0] - R[0][1] * A[1][1] * dW[1] - R[0][2] * A[2][2] * dW[2]);
-  fij[1] = 0.5 * (FL[1] + FR[1] - R[1][0] * A[0][0] * dW[0] - R[1][1] * A[1][1] * dW[1] - R[1][2] * A[2][2] * dW[2]);
-  fij[2] = 0.5 * (FL[2] + FR[2] - R[2][0] * A[0][0] * dW[0] - R[2][1] * A[1][1] * dW[1] - R[2][2] * A[2][2] * dW[2]);
-
-  *amax = chat + fabs(uperp);
 
   PetscFunctionReturn(0);
 }
@@ -1327,13 +1330,25 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           PetscCall(GetVelocityFromMomentum(app->tiny_h, hr, hur, hvr, &ur, &vr));
           PetscCall(GetVelocityFromMomentum(app->tiny_h, hl, hul, hvl, &ul, &vl));
 
-          PetscReal flux[3], amax;
-          PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-          amax_value = fmax(amax_value, amax);
+          PetscInt N=1;
+          PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
+          PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
+          PetscReal sn_vec[N], cn_vec[N];
+          hl_vec[0] = hl;
+          ul_vec[0] = ul;
+          vl_vec[0] = vl;
+          hr_vec[0] = hr;
+          ur_vec[0] = ur;
+          vr_vec[0] = vr;
+          sn_vec[0] = sn;
+          cn_vec[0] = cn;
+          PetscReal flux_vec[N][3], amax_vec[N];
+          PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
+          amax_value = fmax(amax_value, amax_vec[0]);
 
           for (PetscInt idof = 0; idof < dof; idof++) {
-            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
-            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
+            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
+            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
           }
         }
 
@@ -1357,13 +1372,25 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           vl = vr;
         }
 
-        PetscReal flux[3], amax;
-        PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value, amax);
+        PetscInt N=1;
+        PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
+        PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
+        PetscReal sn_vec[N], cn_vec[N];
+        hl_vec[0] = hl;
+        ul_vec[0] = ul;
+        vl_vec[0] = vl;
+        hr_vec[0] = hr;
+        ur_vec[0] = ur;
+        vr_vec[0] = vr;
+        sn_vec[0] = sn;
+        cn_vec[0] = cn;
+        PetscReal flux_vec[N][3], amax_vec[N];
+        PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
+        amax_value = fmax(amax_value, amax_vec[0]);
 
         PetscReal arear = cells->areas[r];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
+          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
         }
 
       } else if (bl == 0 && br == 1) {
@@ -1386,13 +1413,25 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           vr = vl;
         }
 
-        PetscReal flux[3], amax;
-        PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value, amax);
+        PetscInt N=1;
+        PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
+        PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
+        PetscReal sn_vec[N], cn_vec[N];
+        hl_vec[0] = hl;
+        ul_vec[0] = ul;
+        vl_vec[0] = vl;
+        hr_vec[0] = hr;
+        ur_vec[0] = ur;
+        vr_vec[0] = vr;
+        sn_vec[0] = sn;
+        cn_vec[0] = cn;
+        PetscReal flux_vec[N][3], amax_vec[N];
+        PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
+        amax_value = fmax(amax_value, amax_vec[0]);
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
+          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
         }
       }
 
@@ -1439,16 +1478,28 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
           vr  = tmp;
         }
 
-        PetscReal flux[3], amax;
-        PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value, amax);
+        PetscInt N=1;
+        PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
+        PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
+        PetscReal sn_vec[N], cn_vec[N];
+        hl_vec[0] = hl;
+        ul_vec[0] = ul;
+        vl_vec[0] = vl;
+        hr_vec[0] = hr;
+        ur_vec[0] = ur;
+        vr_vec[0] = vr;
+        sn_vec[0] = sn;
+        cn_vec[0] = cn;
+        PetscReal flux_vec[N][3], amax_vec[N];
+        PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
+        amax_value = fmax(amax_value, amax_vec[0]);
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
           if (!bnd_cell_order_flipped) {
-            f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
+            f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
           } else {
-            f_ptr[l * dof + idof] += flux[idof] * edgeLen / areal;
+            f_ptr[l * dof + idof] += flux_vec[0][idof] * edgeLen / areal;
           }
         }
       }
