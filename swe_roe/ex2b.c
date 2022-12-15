@@ -1299,29 +1299,15 @@ static PetscErrorCode GetVelocityFromMomentum(PetscInt N, PetscReal tiny_h, cons
   PetscFunctionReturn(0);
 }
 
-/// @brief It is the RHSFunction called by TS
-/// @param [in] ts A TS struct
-/// @param [in] t Time
-/// @param [in] X A global solution Vec
+/// @brief It computes RHSFunction for internal edges
+/// @param [inout] app A RDyApp struct
 /// @param [inout] F A global flux Vec
-/// @param [inout] ptr A user-defined pointer
-/// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
+PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_value) {
   PetscFunctionBeginUser;
 
-  RDyApp app = ptr;
-
-  DM        dm    = app->dm;
   RDyMesh  *mesh  = &app->mesh;
   RDyCells *cells = &mesh->cells;
   RDyEdges *edges = &mesh->edges;
-  // RDyVertices *vertices = &mesh->vertices;
-
-  app->tstep = app->tstep + 1;
-
-  PetscCall(DMGlobalToLocalBegin(dm, X, INSERT_VALUES, app->localX));
-  PetscCall(DMGlobalToLocalEnd(dm, X, INSERT_VALUES, app->localX));
-  PetscCall(VecZeroEntries(F));
 
   // Get pointers to vector data
   PetscScalar *x_ptr, *f_ptr, *b_ptr;
@@ -1330,7 +1316,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(VecGetArray(app->localB, &b_ptr));
 
   PetscInt  dof        = 3;
-  PetscReal amax_value = 0.0;
 
   for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
 
@@ -1389,7 +1374,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux_vec[N][3], amax_vec[N];
         PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-        amax_value = fmax(amax_value, amax_vec[0]);
+        *amax_value = fmax(*amax_value, amax_vec[0]);
 
         for (PetscInt idof = 0; idof < dof; idof++) {
           if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
@@ -1426,7 +1411,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
       PetscReal flux_vec[N][3], amax_vec[N];
       PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-      amax_value = fmax(amax_value, amax_vec[0]);
+      *amax_value = fmax(*amax_value, amax_vec[0]);
 
       PetscReal arear = cells->areas[r];
       for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1462,7 +1447,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
       PetscReal flux_vec[N][3], amax_vec[N];
       PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-      amax_value = fmax(amax_value, amax_vec[0]);
+      *amax_value = fmax(*amax_value, amax_vec[0]);
 
       PetscReal areal = cells->areas[l];
       for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1471,6 +1456,34 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     }
 
   }
+
+  // Restore vectors
+  PetscCall(VecRestoreArray(app->localX, &x_ptr));
+  PetscCall(VecRestoreArray(F, &f_ptr));
+  PetscCall(VecRestoreArray(app->localB, &b_ptr));
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief It computes RHSFunction for boundary edges
+/// @param [inout] app A RDyApp struct
+/// @param [inout] F A global flux Vec
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_value) {
+  PetscFunctionBeginUser;
+
+  RDyMesh  *mesh  = &app->mesh;
+  RDyCells *cells = &mesh->cells;
+  RDyEdges *edges = &mesh->edges;
+
+
+  // Get pointers to vector data
+  PetscScalar *x_ptr, *f_ptr, *b_ptr;
+  PetscCall(VecGetArray(app->localX, &x_ptr));
+  PetscCall(VecGetArray(F, &f_ptr));
+  PetscCall(VecGetArray(app->localB, &b_ptr));
+
+  PetscInt  dof        = 3;
 
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
 
@@ -1547,7 +1560,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
         PetscReal flux_vec[N][3], amax_vec[N];
         PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-        amax_value = fmax(amax_value, amax_vec[0]);
+        *amax_value = fmax(*amax_value, amax_vec[0]);
 
         PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
@@ -1565,6 +1578,32 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(VecRestoreArray(app->localX, &x_ptr));
   PetscCall(VecRestoreArray(F, &f_ptr));
   PetscCall(VecRestoreArray(app->localB, &b_ptr));
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief It is the RHSFunction called by TS
+/// @param [in] ts A TS struct
+/// @param [in] t Time
+/// @param [in] X A global solution Vec
+/// @param [inout] F A global flux Vec
+/// @param [inout] ptr A user-defined pointer
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
+  PetscFunctionBeginUser;
+
+  RDyApp app = ptr;
+  DM     dm  = app->dm;
+
+  app->tstep = app->tstep + 1;
+
+  PetscCall(DMGlobalToLocalBegin(dm, X, INSERT_VALUES, app->localX));
+  PetscCall(DMGlobalToLocalEnd(dm, X, INSERT_VALUES, app->localX));
+  PetscCall(VecZeroEntries(F));
+
+  PetscReal amax_value = 0.0;
+  PetscCall(RHSFunctionForInternalEdges(app, F, &amax_value));
+  PetscCall(RHSFunctionForBoundaryEdges(app, F, &amax_value));
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
