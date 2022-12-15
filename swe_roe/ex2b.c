@@ -1242,15 +1242,17 @@ PetscErrorCode solver(PetscInt N, const PetscReal hl[N], const PetscReal hr[N], 
 /// @param u Velocity in x-dir
 /// @param v Velocit in y-dir
 /// @return 0 on success, or a non-zero error code on failure
-static PetscErrorCode GetVelocityFromMomentum(PetscReal tiny_h, PetscReal h, PetscReal hu, PetscReal hv, PetscReal *u, PetscReal *v) {
+static PetscErrorCode GetVelocityFromMomentum(PetscInt N, PetscReal tiny_h, const PetscReal h[N], const PetscReal hu[N], const PetscReal hv[N], PetscReal u[N], PetscReal v[N]) {
   PetscFunctionBeginUser;
 
-  if (h < tiny_h) {
-    *u = 0.0;
-    *v = 0.0;
-  } else {
-    *u = hu / h;
-    *v = hv / h;
+  for (PetscInt n=0; n<N; n++) {
+    if (h[n] < tiny_h) {
+      u[n] = 0.0;
+      v[n] = 0.0;
+    } else {
+      u[n] = hu[n] / h[n];
+      v[n] = hv[n] / h[n];
+    }
   }
 
   PetscFunctionReturn(0);
@@ -1318,30 +1320,31 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       if (bl == 0 && br == 0) {
         // Both, left and right cells are not boundary walls
         if (!(hr < app->tiny_h && hl < app->tiny_h)) {
-          PetscReal hul   = x_ptr[l * dof + 1];
-          PetscReal hvl   = x_ptr[l * dof + 2];
-          PetscReal hur   = x_ptr[r * dof + 1];
-          PetscReal hvr   = x_ptr[r * dof + 2];
-          PetscReal areal = cells->areas[l];
-          PetscReal arear = cells->areas[r];
-
-          PetscReal ur, vr, ul, vl;
-
-          PetscCall(GetVelocityFromMomentum(app->tiny_h, hr, hur, hvr, &ur, &vr));
-          PetscCall(GetVelocityFromMomentum(app->tiny_h, hl, hul, hvl, &ul, &vl));
-
           PetscInt N=1;
           PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
           PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
           PetscReal sn_vec[N], cn_vec[N];
-          hl_vec[0] = hl;
-          ul_vec[0] = ul;
-          vl_vec[0] = vl;
-          hr_vec[0] = hr;
-          ur_vec[0] = ur;
-          vr_vec[0] = vr;
+          PetscReal hul_vec[N], hvl_vec[N];
+          PetscReal hur_vec[N], hvr_vec[N];
+
+          PetscReal areal = cells->areas[l];
+          PetscReal arear = cells->areas[r];
+
           sn_vec[0] = sn;
           cn_vec[0] = cn;
+
+          hl_vec[0]  = x_ptr[l * dof + 0];
+          hul_vec[0] = x_ptr[l * dof + 1];
+          hvl_vec[0] = x_ptr[l * dof + 2];
+
+          hr_vec[0]  = x_ptr[r * dof + 0];
+          hur_vec[0] = x_ptr[r * dof + 1];
+          hvr_vec[0] = x_ptr[r * dof + 2];
+
+          PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
+          PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
+
+
           PetscReal flux_vec[N][3], amax_vec[N];
           PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
           amax_value = fmax(amax_value, amax_vec[0]);
@@ -1355,35 +1358,30 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       } else if (bl == 1 && br == 0) {
         // Left cell is a boundary wall and right cell is an internal cell
 
-        PetscReal hr  = x_ptr[r * dof + 0];
-        PetscReal hur = x_ptr[r * dof + 1];
-        PetscReal hvr = x_ptr[r * dof + 2];
-
-        PetscReal ur, vr;
-        PetscCall(GetVelocityFromMomentum(app->tiny_h, hr, hur, hvr, &ur, &vr));
-
-        PetscReal hl = hr;
-        PetscReal ul, vl;
-        if (is_edge_vertical) {
-          ul = ur;
-          vl = -vr;
-        } else {
-          ul = -ur;
-          vl = vr;
-        }
-
         PetscInt N=1;
         PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
         PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
         PetscReal sn_vec[N], cn_vec[N];
-        hl_vec[0] = hl;
-        ul_vec[0] = ul;
-        vl_vec[0] = vl;
-        hr_vec[0] = hr;
-        ur_vec[0] = ur;
-        vr_vec[0] = vr;
+        PetscReal hur_vec[N], hvr_vec[N];
+
         sn_vec[0] = sn;
         cn_vec[0] = cn;
+
+        hr_vec[0]  = x_ptr[r * dof + 0];
+        hur_vec[0] = x_ptr[r * dof + 1];
+        hvr_vec[0] = x_ptr[r * dof + 2];
+
+        PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
+
+        hl_vec[0] = hr_vec[0];
+        if (is_edge_vertical) {
+          ul_vec[0] = ur_vec[0];
+          vl_vec[0] = -vr_vec[0];
+        } else {
+          ul_vec[0] = -ur_vec[0];
+          vl_vec[0] = vr_vec[0];
+        }
+
         PetscReal flux_vec[N][3], amax_vec[N];
         PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
         amax_value = fmax(amax_value, amax_vec[0]);
@@ -1396,35 +1394,30 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       } else if (bl == 0 && br == 1) {
         // Left cell is an internal cell and right cell is a boundary wall
 
-        PetscReal hl  = x_ptr[l * dof + 0];
-        PetscReal hul = x_ptr[l * dof + 1];
-        PetscReal hvl = x_ptr[l * dof + 2];
-
-        PetscReal ul, vl;
-        PetscCall(GetVelocityFromMomentum(app->tiny_h, hl, hul, hvl, &ul, &vl));
-
-        PetscReal hr = hl;
-        PetscReal ur, vr;
-        if (is_edge_vertical) {
-          ur = ul;
-          vr = -vl;
-        } else {
-          ur = -ul;
-          vr = vl;
-        }
-
         PetscInt N=1;
         PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
         PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
         PetscReal sn_vec[N], cn_vec[N];
-        hl_vec[0] = hl;
-        ul_vec[0] = ul;
-        vl_vec[0] = vl;
-        hr_vec[0] = hr;
-        ur_vec[0] = ur;
-        vr_vec[0] = vr;
+        PetscReal hul_vec[N], hvl_vec[N];
+
         sn_vec[0] = sn;
         cn_vec[0] = cn;
+
+        hl_vec[0]  = x_ptr[l * dof + 0];
+        hul_vec[0] = x_ptr[l * dof + 1];
+        hvl_vec[0] = x_ptr[l * dof + 2];
+
+        PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
+
+        hr_vec[0] = hl_vec[0];
+        if (is_edge_vertical) {
+          ur_vec[0] = ul_vec[0];
+          vr_vec[0] = -vl_vec[0];
+        } else {
+          ur_vec[0] = -ul_vec[0];
+          vr_vec[0] = vl_vec[0];
+        }
+
         PetscReal flux_vec[N][3], amax_vec[N];
         PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
         amax_value = fmax(amax_value, amax_vec[0]);
@@ -1449,47 +1442,46 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       PetscReal hl = x_ptr[l * dof + 0];
 
       if (!(hl < app->tiny_h)) {
-        PetscReal hul = x_ptr[l * dof + 1];
-        PetscReal hvl = x_ptr[l * dof + 2];
-
-        PetscReal ul, vl;
-        PetscCall(GetVelocityFromMomentum(app->tiny_h, hl, hul, hvl, &ul, &vl));
-
-        PetscReal hr, ur, vr;
-        hr = hl;
-        if (is_edge_vertical) {
-          ur = ul;
-          vr = -vl;
-        } else {
-          ur = -ul;
-          vr = vl;
-        }
-
-        if (bnd_cell_order_flipped) {
-          PetscReal tmp;
-          tmp = hl;
-          hl  = hr;
-          hr  = tmp;
-          tmp = ul;
-          ul  = ur;
-          ur  = tmp;
-          tmp = vl;
-          vl  = vr;
-          vr  = tmp;
-        }
-
         PetscInt N=1;
         PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
         PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
         PetscReal sn_vec[N], cn_vec[N];
-        hl_vec[0] = hl;
-        ul_vec[0] = ul;
-        vl_vec[0] = vl;
-        hr_vec[0] = hr;
-        ur_vec[0] = ur;
-        vr_vec[0] = vr;
+        PetscReal hul_vec[N], hvl_vec[N];
+
         sn_vec[0] = sn;
         cn_vec[0] = cn;
+
+        hl_vec[0] = hl;
+        hul_vec[0] = x_ptr[l * dof + 1];
+        hvl_vec[0] = x_ptr[l * dof + 2];
+
+        PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
+
+        hr_vec[0] = hl_vec[0];
+        if (is_edge_vertical) {
+          ur_vec[0] = ul_vec[0];
+          vr_vec[0] = -vl_vec[0];
+        } else {
+          ur_vec[0] = -ul_vec[0];
+          vr_vec[0] = vl_vec[0];
+        }
+
+        if (bnd_cell_order_flipped) {
+          PetscReal tmp;
+
+          tmp        = hl_vec[0];
+          hl_vec[0]  = hr_vec[0];
+          hr_vec[0]  = tmp;
+
+          tmp        = ul_vec[0];
+          ul_vec[0]  = ur_vec[0];
+          ur_vec[0]  = tmp;
+
+          tmp        = vl_vec[0];
+          vl_vec[0]  = vr_vec[0];
+          vr_vec[0]  = tmp;
+        }
+
         PetscReal flux_vec[N][3], amax_vec[N];
         PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
         amax_value = fmax(amax_value, amax_vec[0]);
