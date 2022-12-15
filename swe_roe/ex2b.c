@@ -400,8 +400,12 @@ typedef struct {
   PetscInt *ids;
   /// global IDs of edges in local numbering
   PetscInt *global_ids;
+  /// local IDs of internal edges
+  PetscInt *internal_edge_ids;
+  /// local IDs of boundary edges
+  PetscInt *boundary_edge_ids;
 
-  /// PETSC_TRUE iff edge is shared by locally owned cells, OR
+  /// PETSC_TRUE if edge is shared by locally owned cells, OR
   /// if it is shared by a local cell c1 and non-local cell c2 such that
   /// global ID(c1) < global ID(c2).
   PetscBool *is_local;
@@ -537,13 +541,81 @@ PetscErrorCode RDyEdgesCreateFromDM(DM dm, RDyEdges *edges) {
   PetscFunctionReturn(0);
 }
 
-/// Creates a fully initialized RDyEdges struct from a given DM.
-/// @param [in] dm A DM that provides edge data
-/// @param [out] edges A pointer to an RDyEdges that stores allocated data.
+
+/// Destroys an RDyEdges struct, freeing its resources.
+/// @param [inout] edges An RDyEdges struct whose resources will be freed
 ///
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode RDyComputeAdditionalEdgeGeoAttributes(DM dm, RDyCells *cells, RDyEdges *edges) {
+PetscErrorCode RDyEdgesDestroy(RDyEdges edges) {
   PetscFunctionBegin;
+
+  PetscCall(RDyFree(edges.ids));
+  PetscCall(RDyFree(edges.global_ids));
+  PetscCall(RDyFree(edges.is_local));
+  PetscCall(RDyFree(edges.num_cells));
+  PetscCall(RDyFree(edges.vertex_ids));
+  PetscCall(RDyFree(edges.cell_offsets));
+  PetscCall(RDyFree(edges.cell_ids));
+  PetscCall(RDyFree(edges.is_internal));
+  PetscCall(RDyFree(edges.normals));
+  PetscCall(RDyFree(edges.centroids));
+  PetscCall(RDyFree(edges.lengths));
+
+  PetscFunctionReturn(0);
+}
+
+/// a mesh representing a computational domain consisting of a set of cells
+/// connected by edges and vertices
+typedef struct RDyMesh {
+  /// spatial dimension of the mesh (1, 2, or 3)
+  PetscInt dim;
+
+  /// number of cells in the mesh (across all processes)
+  PetscInt num_cells;
+  /// number of cells in the mesh stored on the local process
+  PetscInt num_cells_local;
+  /// number of edges in the mesh attached to locally stored cells
+  PetscInt num_edges;
+  /// number of edges that are internal (i.e. shared by two cells)
+  PetscInt num_internal_edges;
+  /// number of edges that are on the boundary
+  PetscInt num_boundary_edges;
+  /// number of vertices in the mesh attached to locally stored cells
+  PetscInt num_vertices;
+  /// number of faces on the domain boundary attached to locally stored cells
+  PetscInt num_boundary_faces;
+
+  /// the maximum number of vertices attached to any cell
+  PetscInt max_vertex_cells;
+  /// the maximum number of vertices attached to any face
+  PetscInt max_vertex_faces;
+
+  /// cell information
+  RDyCells cells;
+  /// vertex information
+  RDyVertices vertices;
+  /// edge information
+  RDyEdges edges;
+
+  /// closure sizes and data for locally stored cells
+  PetscInt *closureSize, **closure;
+  /// the maximum closure size for any cell (locally stored?)
+  PetscInt maxClosureSize;
+
+  /// mapping of global cells to application/natural cells
+  PetscInt *nG2A;
+} RDyMesh;
+
+/// Computes attributes about an edges needed by RDycore.
+/// @param [in] dm A DM that provides edge data
+/// @param [inout] mesh A pointer to an RDyMesh mesh data.
+///
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
+  PetscFunctionBegin;
+
+  RDyCells *cells = &mesh->cells;
+  RDyEdges *edges = &mesh->edges;
 
   PetscInt cStart, cEnd;
   PetscInt eStart, eEnd;
@@ -560,6 +632,12 @@ PetscErrorCode RDyComputeAdditionalEdgeGeoAttributes(DM dm, RDyCells *cells, RDy
     PetscInt  r          = edges->cell_ids[cellOffset + 1];
 
     PetscBool is_internal_edge = (r >= 0 && l >= 0);
+
+    if (is_internal_edge) {
+      mesh->num_internal_edges++;
+    } else {
+      mesh->num_boundary_edges++;
+    }
 
     if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
       // It is a vertical edge, so
@@ -598,72 +676,33 @@ PetscErrorCode RDyComputeAdditionalEdgeGeoAttributes(DM dm, RDyCells *cells, RDy
       printf("The code only support quad cells with edges that align with x and y axis\n");
       exit(0);
     }
+  }
+
+  // allocate memory to save IDs of internal and boundary edges
+  PetscCall(RDyAlloc(PetscInt, mesh->num_internal_edges, &edges->internal_edge_ids));
+  PetscCall(RDyAlloc(PetscInt, mesh->num_boundary_edges, &edges->boundary_edge_ids));
+
+  // now save the IDs
+  mesh->num_internal_edges = 0;
+  mesh->num_boundary_edges = 0;
+
+  for (PetscInt e = eStart; e < eEnd; e++) {
+
+    PetscInt  iedge = e - eStart;
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+
+    if (r >= 0 && l >= 0) {
+      edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
+    } else {
+      edges->boundary_edge_ids[mesh->num_boundary_edges++] = iedge;
+    }
 
   }
 
   PetscFunctionReturn(0);
 }
-
-
-/// Destroys an RDyEdges struct, freeing its resources.
-/// @param [inout] edges An RDyEdges struct whose resources will be freed
-///
-/// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode RDyEdgesDestroy(RDyEdges edges) {
-  PetscFunctionBegin;
-
-  PetscCall(RDyFree(edges.ids));
-  PetscCall(RDyFree(edges.global_ids));
-  PetscCall(RDyFree(edges.is_local));
-  PetscCall(RDyFree(edges.num_cells));
-  PetscCall(RDyFree(edges.vertex_ids));
-  PetscCall(RDyFree(edges.cell_offsets));
-  PetscCall(RDyFree(edges.cell_ids));
-  PetscCall(RDyFree(edges.is_internal));
-  PetscCall(RDyFree(edges.normals));
-  PetscCall(RDyFree(edges.centroids));
-  PetscCall(RDyFree(edges.lengths));
-
-  PetscFunctionReturn(0);
-}
-
-/// a mesh representing a computational domain consisting of a set of cells
-/// connected by edges and vertices
-typedef struct RDyMesh {
-  /// spatial dimension of the mesh (1, 2, or 3)
-  PetscInt dim;
-
-  /// number of cells in the mesh (across all processes)
-  PetscInt num_cells;
-  /// number of cells in the mesh stored on the local process
-  PetscInt num_cells_local;
-  /// number of edges in the mesh attached to locally stored cells
-  PetscInt num_edges;
-  /// number of vertices in the mesh attached to locally stored cells
-  PetscInt num_vertices;
-  /// number of faces on the domain boundary attached to locally stored cells
-  PetscInt num_boundary_faces;
-
-  /// the maximum number of vertices attached to any cell
-  PetscInt max_vertex_cells;
-  /// the maximum number of vertices attached to any face
-  PetscInt max_vertex_faces;
-
-  /// cell information
-  RDyCells cells;
-  /// vertex information
-  RDyVertices vertices;
-  /// edge information
-  RDyEdges edges;
-
-  /// closure sizes and data for locally stored cells
-  PetscInt *closureSize, **closure;
-  /// the maximum closure size for any cell (locally stored?)
-  PetscInt maxClosureSize;
-
-  /// mapping of global cells to application/natural cells
-  PetscInt *nG2A;
-} RDyMesh;
 
 static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCells *cells, PetscInt rank) {
   PetscFunctionBegin;
@@ -747,6 +786,8 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   PetscInt eStart, eEnd;
   DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
   mesh->num_edges = eEnd - eStart;
+  mesh->num_internal_edges = 0;
+  mesh->num_boundary_edges = 0;
 
   // Determine the number of vertices in the mesh
   PetscInt vStart, vEnd;
@@ -757,7 +798,7 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   PetscCall(RDyCellsCreateFromDM(dm, &mesh->cells));
   PetscCall(RDyEdgesCreateFromDM(dm, &mesh->edges));
   PetscCall(RDyVerticesCreateFromDM(dm, &mesh->vertices));
-  PetscCall(RDyComputeAdditionalEdgeGeoAttributes(dm, &mesh->cells, &mesh->edges));
+  PetscCall(RDyComputeAdditionalEdgeAttributes(dm, mesh));
 
   // Count up local cells.
   mesh->num_cells_local = 0;
