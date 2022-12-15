@@ -421,10 +421,19 @@ typedef struct {
 
   /// unit vector pointing out of one cell into another for each edge
   RDyVector *normals;
+
   /// edge centroids
   RDyPoint *centroids;
+
   /// edge lengths
   PetscReal *lengths;
+
+  /// cosine of the angle between edge and y-axis
+  PetscReal *cn;
+
+  /// sine of the angle between edge and y-axis
+  PetscReal *sn;
+
 } RDyEdges;
 
 /// Allocates and initializes an RDyEdges struct.
@@ -455,6 +464,11 @@ PetscErrorCode RDyEdgesCreate(PetscInt num_edges, RDyEdges *edges) {
   PetscCall(RDyAlloc(RDyPoint, num_edges, &edges->centroids));
   PetscCall(RDyAlloc(RDyVector, num_edges, &edges->normals));
   PetscCall(RDyAlloc(PetscReal, num_edges, &edges->lengths));
+
+  PetscCall(RDyAlloc(PetscReal, num_edges, &edges->cn));
+  PetscCall(RDyAlloc(PetscReal, num_edges, &edges->sn));
+  PetscCall(RDyFill(PetscReal, edges->cn, num_edges, 0.0));
+  PetscCall(RDyFill(PetscReal, edges->sn, num_edges, 0.0));
 
   for (PetscInt iedge = 0; iedge < num_edges; iedge++) {
     edges->ids[iedge] = iedge;
@@ -522,6 +536,74 @@ PetscErrorCode RDyEdgesCreateFromDM(DM dm, RDyEdges *edges) {
 
   PetscFunctionReturn(0);
 }
+
+/// Creates a fully initialized RDyEdges struct from a given DM.
+/// @param [in] dm A DM that provides edge data
+/// @param [out] edges A pointer to an RDyEdges that stores allocated data.
+///
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RDyComputeAdditionalEdgeGeoAttributes(DM dm, RDyCells *cells, RDyEdges *edges) {
+  PetscFunctionBegin;
+
+  PetscInt cStart, cEnd;
+  PetscInt eStart, eEnd;
+  PetscInt vStart, vEnd;
+  DMPlexGetHeightStratum(dm, 0, &cStart, &cEnd);
+  DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
+  DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
+
+  for (PetscInt e = eStart; e < eEnd; e++) {
+    PetscInt  iedge = e - eStart;
+
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+
+    PetscBool is_internal_edge = (r >= 0 && l >= 0);
+
+    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
+      // It is a vertical edge, so
+      // cn = 0.0 and sn = +/- 1.0
+
+      if (is_internal_edge) {
+        PetscReal yr     = cells->centroids[r].X[1];
+        PetscReal yl     = cells->centroids[l].X[1];
+        PetscReal dy_l2r = yr - yl;
+        if (dy_l2r < 0.0) {
+          edges->sn[iedge] = -1.0;
+        } else {
+          edges->sn[iedge] = 1.0;
+        }
+      } else {
+        edges->sn[iedge] = 1.0;
+      }
+
+    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
+      // It is a horizontal edge, so
+      // sn = 0.0 and cn = +/- 1.0
+      if (is_internal_edge) {
+        PetscReal xr     = cells->centroids[r].X[0];
+        PetscReal xl     = cells->centroids[l].X[0];
+        PetscReal dx_l2r = xr - xl;
+        if (dx_l2r < 0.0) {
+          edges->cn[iedge] = -1.0;
+        } else {
+          edges->cn[iedge] = 1.0;
+        }
+      } else {
+        edges->cn[iedge] = 1.0;
+      }
+
+    } else {
+      printf("The code only support quad cells with edges that align with x and y axis\n");
+      exit(0);
+    }
+
+  }
+
+  PetscFunctionReturn(0);
+}
+
 
 /// Destroys an RDyEdges struct, freeing its resources.
 /// @param [inout] edges An RDyEdges struct whose resources will be freed
@@ -675,6 +757,7 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   PetscCall(RDyCellsCreateFromDM(dm, &mesh->cells));
   PetscCall(RDyEdgesCreateFromDM(dm, &mesh->edges));
   PetscCall(RDyVerticesCreateFromDM(dm, &mesh->vertices));
+  PetscCall(RDyComputeAdditionalEdgeGeoAttributes(dm, &mesh->cells, &mesh->edges));
 
   // Count up local cells.
   mesh->num_cells_local = 0;
@@ -1208,6 +1291,8 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscInt  l          = edges->cell_ids[cellOffset];
     PetscInt  r          = edges->cell_ids[cellOffset + 1];
     PetscReal edgeLen    = edges->lengths[iedge];
+    PetscReal cn         = edges->cn[iedge];
+    PetscReal sn         = edges->sn[iedge];
 
     PetscBool is_edge_vertical;
     if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
@@ -1226,30 +1311,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       PetscReal hr = x_ptr[r * dof + 0];
       PetscReal bl = b_ptr[l];
       PetscReal br = b_ptr[r];
-
-      // It is assumed that the flux is computed from the left (l) cell to 'right'.
-      // Check to make sure cell 'l' is actually left of the edge.
-      PetscReal cn = 0.0;
-      PetscReal sn = 0.0;
-      if (is_edge_vertical) {
-        PetscReal yr     = cells->centroids[r].X[1];
-        PetscReal yl     = cells->centroids[l].X[1];
-        PetscReal dy_l2r = yr - yl;
-        if (dy_l2r < 0.0) {
-          sn = -1.0;
-        } else {
-          sn = 1.0;
-        }
-      } else {
-        PetscReal xr     = cells->centroids[r].X[0];
-        PetscReal xl     = cells->centroids[l].X[0];
-        PetscReal dx_l2r = xr - xl;
-        if (dx_l2r < 0.0) {
-          cn = -1.0;
-        } else {
-          cn = 1.0;
-        }
-      }
 
       if (bl == 0 && br == 0) {
         // Both, left and right cells are not boundary walls
@@ -1337,15 +1398,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
 
     } else if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
-
-      PetscReal cn = 0.0;
-      PetscReal sn = 0.0;
-
-      if (is_edge_vertical) {
-        sn = 1.0;
-      } else {
-        cn = 1.0;
-      }
 
       PetscBool bnd_cell_order_flipped = PETSC_FALSE;
 
