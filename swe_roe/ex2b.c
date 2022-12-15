@@ -1315,17 +1315,46 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
   PetscCall(VecGetArray(F, &f_ptr));
   PetscCall(VecGetArray(app->localB, &b_ptr));
 
-  PetscInt  dof        = 3;
+  PetscInt  dof = 3;
+  PetscInt  num = mesh->num_internal_edges;
+  PetscReal hl_vec_int[num], hul_vec_int[num], hvl_vec_int[num], ul_vec_int[num], vl_vec_int[num];
+  PetscReal hr_vec_int[num], hur_vec_int[num], hvr_vec_int[num], ur_vec_int[num], vr_vec_int[num];
+  PetscReal sn_vec_int[num], cn_vec_int[num];
+  PetscReal flux_vec_int[num][3], amax_vec_int[num];
 
+  // Collect the h/hu/hv for left and right cells to compute u/v
   for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
 
     PetscInt iedge       = edges->internal_edge_ids[ii];
     PetscInt  cellOffset = edges->cell_offsets[iedge];
     PetscInt  l          = edges->cell_ids[cellOffset];
     PetscInt  r          = edges->cell_ids[cellOffset + 1];
-    PetscReal edgeLen    = edges->lengths[iedge];
-    PetscReal cn         = edges->cn[iedge];
-    PetscReal sn         = edges->sn[iedge];
+
+    hl_vec_int[ii]  = x_ptr[l * dof + 0];
+    hul_vec_int[ii] = x_ptr[l * dof + 1];
+    hvl_vec_int[ii] = x_ptr[l * dof + 2];
+
+    hr_vec_int[ii]  = x_ptr[r * dof + 0];
+    hur_vec_int[ii] = x_ptr[r * dof + 1];
+    hvr_vec_int[ii] = x_ptr[r * dof + 2];
+  }
+
+  // Compute u/v for left and right cells
+  PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hl_vec_int, hul_vec_int, hvl_vec_int, ul_vec_int, vl_vec_int));
+  PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hr_vec_int, hur_vec_int, hvr_vec_int, ur_vec_int, vr_vec_int));
+
+  // Update u/v for reflective internal edges
+  for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
+
+    PetscInt iedge       = edges->internal_edge_ids[ii];
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscReal bl         = b_ptr[l];
+    PetscReal br         = b_ptr[r];
+
+    cn_vec_int[ii] = edges->cn[iedge];
+    sn_vec_int[ii] = edges->sn[iedge];
 
     PetscBool is_edge_vertical;
     if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
@@ -1337,124 +1366,78 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       exit(0);
     }
 
-    // Perform computation for an internal edge
+    if (bl == 1 && br == 0) {
+      // Update left values as it is a reflective boundary wall
+      hl_vec_int[ii] = hr_vec_int[ii];
+      if (is_edge_vertical) {
+        ul_vec_int[ii] = ur_vec_int[ii];
+        vl_vec_int[ii] = -vr_vec_int[ii];
+      } else {
+        ul_vec_int[ii] = -ur_vec_int[ii];
+        vl_vec_int[ii] = vr_vec_int[ii];
+      }
+
+    } else if (bl == 0 && br == 1) {
+      // Update right values as it is a reflective boundary wall
+      hr_vec_int[ii] = hl_vec_int[ii];
+      if (is_edge_vertical) {
+        ur_vec_int[ii] = ul_vec_int[ii];
+        vr_vec_int[ii] = -vl_vec_int[ii];
+      } else {
+        ur_vec_int[ii] = -ul_vec_int[ii];
+        vr_vec_int[ii] = vl_vec_int[ii];
+      }
+    }
+  }
+
+  // Call Riemann solver
+  PetscCall(solver(num, hl_vec_int, hr_vec_int, ul_vec_int, ur_vec_int, vl_vec_int, vr_vec_int, sn_vec_int, cn_vec_int, flux_vec_int, amax_vec_int));
+
+  // Save the flux values in the Vec based by TS
+  for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
+
+    PetscInt iedge       = edges->internal_edge_ids[ii];
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscReal edgeLen    = edges->lengths[iedge];
 
     PetscReal hl = x_ptr[l * dof + 0];
     PetscReal hr = x_ptr[r * dof + 0];
     PetscReal bl = b_ptr[l];
     PetscReal br = b_ptr[r];
 
+    *amax_value = fmax(*amax_value, amax_vec_int[ii]);
+
     if (bl == 0 && br == 0) {
       // Both, left and right cells are not boundary walls
       if (!(hr < app->tiny_h && hl < app->tiny_h)) {
-        PetscInt N=1;
-        PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
-        PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
-        PetscReal sn_vec[N], cn_vec[N];
-        PetscReal hul_vec[N], hvl_vec[N];
-        PetscReal hur_vec[N], hvr_vec[N];
 
         PetscReal areal = cells->areas[l];
         PetscReal arear = cells->areas[r];
 
-        sn_vec[0] = sn;
-        cn_vec[0] = cn;
-
-        hl_vec[0]  = x_ptr[l * dof + 0];
-        hul_vec[0] = x_ptr[l * dof + 1];
-        hvl_vec[0] = x_ptr[l * dof + 2];
-
-        hr_vec[0]  = x_ptr[r * dof + 0];
-        hur_vec[0] = x_ptr[r * dof + 1];
-        hvr_vec[0] = x_ptr[r * dof + 2];
-
-        PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
-        PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
-
-
-        PetscReal flux_vec[N][3], amax_vec[N];
-        PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-        *amax_value = fmax(*amax_value, amax_vec[0]);
-
         for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
-          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
+          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
+          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
         }
       }
 
     } else if (bl == 1 && br == 0) {
       // Left cell is a boundary wall and right cell is an internal cell
 
-      PetscInt N=1;
-      PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
-      PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
-      PetscReal sn_vec[N], cn_vec[N];
-      PetscReal hur_vec[N], hvr_vec[N];
-
-      sn_vec[0] = sn;
-      cn_vec[0] = cn;
-
-      hr_vec[0]  = x_ptr[r * dof + 0];
-      hur_vec[0] = x_ptr[r * dof + 1];
-      hvr_vec[0] = x_ptr[r * dof + 2];
-
-      PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
-
-      hl_vec[0] = hr_vec[0];
-      if (is_edge_vertical) {
-        ul_vec[0] = ur_vec[0];
-        vl_vec[0] = -vr_vec[0];
-      } else {
-        ul_vec[0] = -ur_vec[0];
-        vl_vec[0] = vr_vec[0];
-      }
-
-      PetscReal flux_vec[N][3], amax_vec[N];
-      PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-      *amax_value = fmax(*amax_value, amax_vec[0]);
-
       PetscReal arear = cells->areas[r];
       for (PetscInt idof = 0; idof < dof; idof++) {
-        if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
+        if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
       }
 
     } else if (bl == 0 && br == 1) {
       // Left cell is an internal cell and right cell is a boundary wall
 
-      PetscInt N=1;
-      PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
-      PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
-      PetscReal sn_vec[N], cn_vec[N];
-      PetscReal hul_vec[N], hvl_vec[N];
-
-      sn_vec[0] = sn;
-      cn_vec[0] = cn;
-
-      hl_vec[0]  = x_ptr[l * dof + 0];
-      hul_vec[0] = x_ptr[l * dof + 1];
-      hvl_vec[0] = x_ptr[l * dof + 2];
-
-      PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
-
-      hr_vec[0] = hl_vec[0];
-      if (is_edge_vertical) {
-        ur_vec[0] = ul_vec[0];
-        vr_vec[0] = -vl_vec[0];
-      } else {
-        ur_vec[0] = -ul_vec[0];
-        vr_vec[0] = vl_vec[0];
-      }
-
-      PetscReal flux_vec[N][3], amax_vec[N];
-      PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-      *amax_value = fmax(*amax_value, amax_vec[0]);
-
       PetscReal areal = cells->areas[l];
       for (PetscInt idof = 0; idof < dof; idof++) {
-        if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
+        if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
       }
     }
-
   }
 
   // Restore vectors
@@ -1483,7 +1466,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
   PetscCall(VecGetArray(F, &f_ptr));
   PetscCall(VecGetArray(app->localB, &b_ptr));
 
-  PetscInt  dof        = 3;
+  PetscInt dof = 3;
 
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
 
