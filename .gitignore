@@ -4,3 +4,4 @@ swe_roe/*.dSYM/*
 swe_roe/outputs/*
 swe_roe/*.asv
 site
+*.vscode
