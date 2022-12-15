@@ -541,7 +541,6 @@ PetscErrorCode RDyEdgesCreateFromDM(DM dm, RDyEdges *edges) {
   PetscFunctionReturn(0);
 }
 
-
 /// Destroys an RDyEdges struct, freeing its resources.
 /// @param [inout] edges An RDyEdges struct whose resources will be freed
 ///
@@ -625,11 +624,11 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
   DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
 
   for (PetscInt e = eStart; e < eEnd; e++) {
-    PetscInt  iedge = e - eStart;
+    PetscInt iedge = e - eStart;
 
-    PetscInt  cellOffset = edges->cell_offsets[iedge];
-    PetscInt  l          = edges->cell_ids[cellOffset];
-    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
 
     PetscBool is_internal_edge = (r >= 0 && l >= 0);
 
@@ -687,18 +686,16 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
   mesh->num_boundary_edges = 0;
 
   for (PetscInt e = eStart; e < eEnd; e++) {
-
-    PetscInt  iedge = e - eStart;
-    PetscInt  cellOffset = edges->cell_offsets[iedge];
-    PetscInt  l          = edges->cell_ids[cellOffset];
-    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscInt iedge      = e - eStart;
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
 
     if (r >= 0 && l >= 0) {
       edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
     } else {
       edges->boundary_edge_ids[mesh->num_boundary_edges++] = iedge;
     }
-
   }
 
   PetscFunctionReturn(0);
@@ -785,7 +782,7 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   // Determine the number of edges in the mesh
   PetscInt eStart, eEnd;
   DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
-  mesh->num_edges = eEnd - eStart;
+  mesh->num_edges          = eEnd - eStart;
   mesh->num_internal_edges = 0;
   mesh->num_boundary_edges = 0;
 
@@ -1182,14 +1179,13 @@ PetscErrorCode AddBuildings(RDyApp app) {
 /// @param [out] fij flux
 /// @param [out] amax maximum wave speed
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode solver(PetscInt N, const PetscReal hl[N], const PetscReal hr[N], const PetscReal ul[N], const PetscReal ur[N], const PetscReal vl[N], const PetscReal vr[N], const PetscReal sn[N], const PetscReal cn[N],
-                      PetscReal fij[N][3], PetscReal amax[N]) {
+PetscErrorCode solver(PetscInt N, const PetscReal hl[N], const PetscReal hr[N], const PetscReal ul[N], const PetscReal ur[N], const PetscReal vl[N],
+                      const PetscReal vr[N], const PetscReal sn[N], const PetscReal cn[N], PetscReal fij[N][3], PetscReal amax[N]) {
   PetscFunctionBeginUser;
 
   PetscReal grav = 9.806;
 
-  for (PetscInt n=0; n<N; n++) {
-
+  for (PetscInt n = 0; n < N; n++) {
     // Compute Roe averages
     PetscReal duml  = pow(hl[n], 0.5);
     PetscReal dumr  = pow(hr[n], 0.5);
@@ -1283,10 +1279,11 @@ PetscErrorCode solver(PetscInt N, const PetscReal hl[N], const PetscReal hr[N], 
 /// @param u Velocity in x-dir
 /// @param v Velocit in y-dir
 /// @return 0 on success, or a non-zero error code on failure
-static PetscErrorCode GetVelocityFromMomentum(PetscInt N, PetscReal tiny_h, const PetscReal h[N], const PetscReal hu[N], const PetscReal hv[N], PetscReal u[N], PetscReal v[N]) {
+static PetscErrorCode GetVelocityFromMomentum(PetscInt N, PetscReal tiny_h, const PetscReal h[N], const PetscReal hu[N], const PetscReal hv[N],
+                                              PetscReal u[N], PetscReal v[N]) {
   PetscFunctionBeginUser;
 
-  for (PetscInt n=0; n<N; n++) {
+  for (PetscInt n = 0; n < N; n++) {
     if (h[n] < tiny_h) {
       u[n] = 0.0;
       v[n] = 0.0;
@@ -1324,11 +1321,10 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
 
   // Collect the h/hu/hv for left and right cells to compute u/v
   for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
-
-    PetscInt iedge       = edges->internal_edge_ids[ii];
-    PetscInt  cellOffset = edges->cell_offsets[iedge];
-    PetscInt  l          = edges->cell_ids[cellOffset];
-    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscInt iedge      = edges->internal_edge_ids[ii];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
 
     hl_vec_int[ii]  = x_ptr[l * dof + 0];
     hul_vec_int[ii] = x_ptr[l * dof + 1];
@@ -1345,8 +1341,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
 
   // Update u/v for reflective internal edges
   for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
-
-    PetscInt iedge       = edges->internal_edge_ids[ii];
+    PetscInt  iedge      = edges->internal_edge_ids[ii];
     PetscInt  cellOffset = edges->cell_offsets[iedge];
     PetscInt  l          = edges->cell_ids[cellOffset];
     PetscInt  r          = edges->cell_ids[cellOffset + 1];
@@ -1395,8 +1390,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
 
   // Save the flux values in the Vec based by TS
   for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
-
-    PetscInt iedge       = edges->internal_edge_ids[ii];
+    PetscInt  iedge      = edges->internal_edge_ids[ii];
     PetscInt  cellOffset = edges->cell_offsets[iedge];
     PetscInt  l          = edges->cell_ids[cellOffset];
     PetscInt  r          = edges->cell_ids[cellOffset + 1];
@@ -1412,7 +1406,6 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
     if (bl == 0 && br == 0) {
       // Both, left and right cells are not boundary walls
       if (!(hr < app->tiny_h && hl < app->tiny_h)) {
-
         PetscReal areal = cells->areas[l];
         PetscReal arear = cells->areas[r];
 
@@ -1465,7 +1458,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
   PetscCall(VecGetArray(F, &f_ptr));
   PetscCall(VecGetArray(app->localB, &b_ptr));
 
-  PetscInt dof = 3;
+  PetscInt  dof = 3;
   PetscInt  num = mesh->num_boundary_edges;
   PetscReal hl_vec_bnd[num], hul_vec_bnd[num], hvl_vec_bnd[num], ul_vec_bnd[num], vl_vec_bnd[num];
   PetscReal hr_vec_bnd[num], ur_vec_bnd[num], vr_vec_bnd[num];
@@ -1474,15 +1467,13 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
 
   // Collect the h/hu/hv for left cells to compute u/v
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
+    PetscInt iedge      = edges->boundary_edge_ids[ii];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
 
-    PetscInt iedge       = edges->boundary_edge_ids[ii];
-    PetscInt  cellOffset = edges->cell_offsets[iedge];
-    PetscInt  l          = edges->cell_ids[cellOffset];
-
-    hl_vec_bnd[ii] = x_ptr[l * dof + 1];
+    hl_vec_bnd[ii]  = x_ptr[l * dof + 1];
     hul_vec_bnd[ii] = x_ptr[l * dof + 1];
     hvl_vec_bnd[ii] = x_ptr[l * dof + 2];
-        
   }
 
   // Compute u/v for left cells
@@ -1490,10 +1481,9 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
 
   // Compute h/u/v for right cells
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
-
-    PetscInt iedge       = edges->boundary_edge_ids[ii];
-    PetscInt  cellOffset = edges->cell_offsets[iedge];
-    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt iedge      = edges->boundary_edge_ids[ii];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
 
     cn_vec_bnd[ii] = edges->cn[iedge];
     sn_vec_bnd[ii] = edges->sn[iedge];
@@ -1532,19 +1522,18 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
         if (bnd_cell_order_flipped) {
           PetscReal tmp;
 
-          tmp        = hl_vec_bnd[ii];
-          hl_vec_bnd[ii]  = hr_vec_bnd[ii];
-          hr_vec_bnd[ii]  = tmp;
+          tmp            = hl_vec_bnd[ii];
+          hl_vec_bnd[ii] = hr_vec_bnd[ii];
+          hr_vec_bnd[ii] = tmp;
 
-          tmp        = ul_vec_bnd[ii];
-          ul_vec_bnd[ii]  = ur_vec_bnd[ii];
-          ur_vec_bnd[ii]  = tmp;
+          tmp            = ul_vec_bnd[ii];
+          ul_vec_bnd[ii] = ur_vec_bnd[ii];
+          ur_vec_bnd[ii] = tmp;
 
-          tmp        = vl_vec_bnd[ii];
-          vl_vec_bnd[ii]  = vr_vec_bnd[ii];
-          vr_vec_bnd[ii]  = tmp;
+          tmp            = vl_vec_bnd[ii];
+          vl_vec_bnd[ii] = vr_vec_bnd[ii];
+          vr_vec_bnd[ii] = tmp;
         }
-
       }
     }
   }
@@ -1554,8 +1543,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
 
   // Save the flux values in the Vec based by TS
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
-
-    PetscInt iedge       = edges->boundary_edge_ids[ii];
+    PetscInt  iedge      = edges->boundary_edge_ids[ii];
     PetscInt  cellOffset = edges->cell_offsets[iedge];
     PetscInt  l          = edges->cell_ids[cellOffset];
     PetscReal edgeLen    = edges->lengths[iedge];
@@ -1585,7 +1573,6 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
       PetscReal hl = x_ptr[l * dof + 0];
 
       if (!(hl < app->tiny_h)) {
-
         *amax_value = fmax(*amax_value, amax_vec_bnd[ii]);
         for (PetscInt idof = 0; idof < dof; idof++) {
           if (!bnd_cell_order_flipped) {

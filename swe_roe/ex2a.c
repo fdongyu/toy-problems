@@ -553,11 +553,11 @@ PetscErrorCode RDyComputeAdditionalEdgeGeoAttributes(DM dm, RDyCells *cells, RDy
   DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
 
   for (PetscInt e = eStart; e < eEnd; e++) {
-    PetscInt  iedge = e - eStart;
+    PetscInt iedge = e - eStart;
 
-    PetscInt  cellOffset = edges->cell_offsets[iedge];
-    PetscInt  l          = edges->cell_ids[cellOffset];
-    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
 
     PetscBool is_internal_edge = (r >= 0 && l >= 0);
 
@@ -598,12 +598,10 @@ PetscErrorCode RDyComputeAdditionalEdgeGeoAttributes(DM dm, RDyCells *cells, RDy
       printf("The code only support quad cells with edges that align with x and y axis\n");
       exit(0);
     }
-
   }
 
   PetscFunctionReturn(0);
 }
-
 
 /// Destroys an RDyEdges struct, freeing its resources.
 /// @param [inout] edges An RDyEdges struct whose resources will be freed
