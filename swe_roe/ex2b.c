@@ -1332,7 +1332,9 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscInt  dof        = 3;
   PetscReal amax_value = 0.0;
 
-  for (PetscInt iedge = 0; iedge < mesh->num_edges; iedge++) {
+  for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
+
+    PetscInt iedge       = edges->internal_edge_ids[ii];
     PetscInt  cellOffset = edges->cell_offsets[iedge];
     PetscInt  l          = edges->cell_ids[cellOffset];
     PetscInt  r          = edges->cell_ids[cellOffset + 1];
@@ -1350,96 +1352,25 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
       exit(0);
     }
 
-    if (r >= 0 && l >= 0) {
-      // Perform computation for an internal edge
+    // Perform computation for an internal edge
 
-      PetscReal hl = x_ptr[l * dof + 0];
-      PetscReal hr = x_ptr[r * dof + 0];
-      PetscReal bl = b_ptr[l];
-      PetscReal br = b_ptr[r];
+    PetscReal hl = x_ptr[l * dof + 0];
+    PetscReal hr = x_ptr[r * dof + 0];
+    PetscReal bl = b_ptr[l];
+    PetscReal br = b_ptr[r];
 
-      if (bl == 0 && br == 0) {
-        // Both, left and right cells are not boundary walls
-        if (!(hr < app->tiny_h && hl < app->tiny_h)) {
-          PetscInt N=1;
-          PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
-          PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
-          PetscReal sn_vec[N], cn_vec[N];
-          PetscReal hul_vec[N], hvl_vec[N];
-          PetscReal hur_vec[N], hvr_vec[N];
-
-          PetscReal areal = cells->areas[l];
-          PetscReal arear = cells->areas[r];
-
-          sn_vec[0] = sn;
-          cn_vec[0] = cn;
-
-          hl_vec[0]  = x_ptr[l * dof + 0];
-          hul_vec[0] = x_ptr[l * dof + 1];
-          hvl_vec[0] = x_ptr[l * dof + 2];
-
-          hr_vec[0]  = x_ptr[r * dof + 0];
-          hur_vec[0] = x_ptr[r * dof + 1];
-          hvr_vec[0] = x_ptr[r * dof + 2];
-
-          PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
-          PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
-
-
-          PetscReal flux_vec[N][3], amax_vec[N];
-          PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-          amax_value = fmax(amax_value, amax_vec[0]);
-
-          for (PetscInt idof = 0; idof < dof; idof++) {
-            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
-            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
-          }
-        }
-
-      } else if (bl == 1 && br == 0) {
-        // Left cell is a boundary wall and right cell is an internal cell
-
-        PetscInt N=1;
-        PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
-        PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
-        PetscReal sn_vec[N], cn_vec[N];
-        PetscReal hur_vec[N], hvr_vec[N];
-
-        sn_vec[0] = sn;
-        cn_vec[0] = cn;
-
-        hr_vec[0]  = x_ptr[r * dof + 0];
-        hur_vec[0] = x_ptr[r * dof + 1];
-        hvr_vec[0] = x_ptr[r * dof + 2];
-
-        PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
-
-        hl_vec[0] = hr_vec[0];
-        if (is_edge_vertical) {
-          ul_vec[0] = ur_vec[0];
-          vl_vec[0] = -vr_vec[0];
-        } else {
-          ul_vec[0] = -ur_vec[0];
-          vl_vec[0] = vr_vec[0];
-        }
-
-        PetscReal flux_vec[N][3], amax_vec[N];
-        PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
-        amax_value = fmax(amax_value, amax_vec[0]);
-
-        PetscReal arear = cells->areas[r];
-        for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
-        }
-
-      } else if (bl == 0 && br == 1) {
-        // Left cell is an internal cell and right cell is a boundary wall
-
+    if (bl == 0 && br == 0) {
+      // Both, left and right cells are not boundary walls
+      if (!(hr < app->tiny_h && hl < app->tiny_h)) {
         PetscInt N=1;
         PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
         PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
         PetscReal sn_vec[N], cn_vec[N];
         PetscReal hul_vec[N], hvl_vec[N];
+        PetscReal hur_vec[N], hvr_vec[N];
+
+        PetscReal areal = cells->areas[l];
+        PetscReal arear = cells->areas[r];
 
         sn_vec[0] = sn;
         cn_vec[0] = cn;
@@ -1448,28 +1379,119 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
         hul_vec[0] = x_ptr[l * dof + 1];
         hvl_vec[0] = x_ptr[l * dof + 2];
 
+        hr_vec[0]  = x_ptr[r * dof + 0];
+        hur_vec[0] = x_ptr[r * dof + 1];
+        hvr_vec[0] = x_ptr[r * dof + 2];
+
+        PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
         PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
 
-        hr_vec[0] = hl_vec[0];
-        if (is_edge_vertical) {
-          ur_vec[0] = ul_vec[0];
-          vr_vec[0] = -vl_vec[0];
-        } else {
-          ur_vec[0] = -ul_vec[0];
-          vr_vec[0] = vl_vec[0];
-        }
 
         PetscReal flux_vec[N][3], amax_vec[N];
         PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
         amax_value = fmax(amax_value, amax_vec[0]);
 
-        PetscReal areal = cells->areas[l];
         for (PetscInt idof = 0; idof < dof; idof++) {
           if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
+          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
         }
       }
 
-    } else if (cells->is_local[l] && b_ptr[l] == 0) {
+    } else if (bl == 1 && br == 0) {
+      // Left cell is a boundary wall and right cell is an internal cell
+
+      PetscInt N=1;
+      PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
+      PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
+      PetscReal sn_vec[N], cn_vec[N];
+      PetscReal hur_vec[N], hvr_vec[N];
+
+      sn_vec[0] = sn;
+      cn_vec[0] = cn;
+
+      hr_vec[0]  = x_ptr[r * dof + 0];
+      hur_vec[0] = x_ptr[r * dof + 1];
+      hvr_vec[0] = x_ptr[r * dof + 2];
+
+      PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hr_vec, hur_vec, hvr_vec, ur_vec, vr_vec));
+
+      hl_vec[0] = hr_vec[0];
+      if (is_edge_vertical) {
+        ul_vec[0] = ur_vec[0];
+        vl_vec[0] = -vr_vec[0];
+      } else {
+        ul_vec[0] = -ur_vec[0];
+        vl_vec[0] = vr_vec[0];
+      }
+
+      PetscReal flux_vec[N][3], amax_vec[N];
+      PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
+      amax_value = fmax(amax_value, amax_vec[0]);
+
+      PetscReal arear = cells->areas[r];
+      for (PetscInt idof = 0; idof < dof; idof++) {
+        if (cells->is_local[r]) f_ptr[r * dof + idof] += flux_vec[0][idof] * edgeLen / arear;
+      }
+
+    } else if (bl == 0 && br == 1) {
+      // Left cell is an internal cell and right cell is a boundary wall
+
+      PetscInt N=1;
+      PetscReal hl_vec[N], ul_vec[N], vl_vec[N];
+      PetscReal hr_vec[N], ur_vec[N], vr_vec[N];
+      PetscReal sn_vec[N], cn_vec[N];
+      PetscReal hul_vec[N], hvl_vec[N];
+
+      sn_vec[0] = sn;
+      cn_vec[0] = cn;
+
+      hl_vec[0]  = x_ptr[l * dof + 0];
+      hul_vec[0] = x_ptr[l * dof + 1];
+      hvl_vec[0] = x_ptr[l * dof + 2];
+
+      PetscCall(GetVelocityFromMomentum(N, app->tiny_h, hl_vec, hul_vec, hvl_vec, ul_vec, vl_vec));
+
+      hr_vec[0] = hl_vec[0];
+      if (is_edge_vertical) {
+        ur_vec[0] = ul_vec[0];
+        vr_vec[0] = -vl_vec[0];
+      } else {
+        ur_vec[0] = -ul_vec[0];
+        vr_vec[0] = vl_vec[0];
+      }
+
+      PetscReal flux_vec[N][3], amax_vec[N];
+      PetscCall(solver(N, hl_vec, hr_vec, ul_vec, ur_vec, vl_vec, vr_vec, sn_vec, cn_vec, flux_vec, amax_vec));
+      amax_value = fmax(amax_value, amax_vec[0]);
+
+      PetscReal areal = cells->areas[l];
+      for (PetscInt idof = 0; idof < dof; idof++) {
+        if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux_vec[0][idof] * edgeLen / areal;
+      }
+    }
+
+  }
+
+  for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
+
+    PetscInt iedge       = edges->boundary_edge_ids[ii];
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscReal edgeLen    = edges->lengths[iedge];
+    PetscReal cn         = edges->cn[iedge];
+    PetscReal sn         = edges->sn[iedge];
+
+    PetscBool is_edge_vertical;
+    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
+      is_edge_vertical = PETSC_TRUE;
+    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
+      is_edge_vertical = PETSC_FALSE;
+    } else {
+      printf("The code only support quad cells with edges that align with x and y axis\n");
+      exit(0);
+    }
+
+    if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
 
       PetscBool bnd_cell_order_flipped = PETSC_FALSE;
