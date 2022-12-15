@@ -1168,6 +1168,7 @@ PetscErrorCode AddBuildings(RDyApp app) {
 }
 
 /// @brief Computes flux based on Roe solver
+/// @param N Size of the array
 /// @param [in] hl Height left of the edge
 /// @param [in] hr Height right of the edge
 /// @param [in] ul Velocity in x-dir left of the edge
@@ -1272,6 +1273,7 @@ PetscErrorCode solver(PetscInt N, const PetscReal hl[N], const PetscReal hr[N], 
 }
 
 /// @brief Computes velocities in x and y-dir based on momentum in x and y-dir
+/// @param N Size of the array
 /// @param tiny_h Threshold value for height
 /// @param h Height
 /// @param hu Momentum in x-dir
