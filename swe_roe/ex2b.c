@@ -1406,7 +1406,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
     *amax_value = fmax(*amax_value, amax_vec_int[ii]);
 
     if (bl == 0 && br == 0) {
-      // Both, left and right cells are not boundary walls
+      // Both, left and right cells are not reflective boundary walls
       if (!(hr < app->tiny_h && hl < app->tiny_h)) {
         PetscReal areal = cells->areas[l];
         PetscReal arear = cells->areas[r];
@@ -1418,7 +1418,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       }
 
     } else if (bl == 1 && br == 0) {
-      // Left cell is a boundary wall and right cell is an internal cell
+      // Left cell is a reflective boundary wall and right cell is an internal cell
 
       PetscReal arear = cells->areas[r];
       for (PetscInt idof = 0; idof < ndof; idof++) {
@@ -1426,7 +1426,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       }
 
     } else if (bl == 0 && br == 1) {
-      // Left cell is an internal cell and right cell is a boundary wall
+      // Left cell is an internal cell and right cell is a reflective boundary wall
 
       PetscReal areal = cells->areas[l];
       for (PetscInt idof = 0; idof < ndof; idof++) {
@@ -1724,7 +1724,7 @@ int main(int argc, char **argv) {
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->Nt, app->comm_size);
+    sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->Nt, app->comm_size);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
