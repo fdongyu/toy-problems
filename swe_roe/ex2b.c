@@ -400,8 +400,12 @@ typedef struct {
   PetscInt *ids;
   /// global IDs of edges in local numbering
   PetscInt *global_ids;
+  /// local IDs of internal edges
+  PetscInt *internal_edge_ids;
+  /// local IDs of boundary edges
+  PetscInt *boundary_edge_ids;
 
-  /// PETSC_TRUE iff edge is shared by locally owned cells, OR
+  /// PETSC_TRUE if edge is shared by locally owned cells, OR
   /// if it is shared by a local cell c1 and non-local cell c2 such that
   /// global ID(c1) < global ID(c2).
   PetscBool *is_local;
@@ -421,10 +425,19 @@ typedef struct {
 
   /// unit vector pointing out of one cell into another for each edge
   RDyVector *normals;
+
   /// edge centroids
   RDyPoint *centroids;
+
   /// edge lengths
   PetscReal *lengths;
+
+  /// cosine of the angle between edge and y-axis
+  PetscReal *cn;
+
+  /// sine of the angle between edge and y-axis
+  PetscReal *sn;
+
 } RDyEdges;
 
 /// Allocates and initializes an RDyEdges struct.
@@ -455,6 +468,11 @@ PetscErrorCode RDyEdgesCreate(PetscInt num_edges, RDyEdges *edges) {
   PetscCall(RDyAlloc(RDyPoint, num_edges, &edges->centroids));
   PetscCall(RDyAlloc(RDyVector, num_edges, &edges->normals));
   PetscCall(RDyAlloc(PetscReal, num_edges, &edges->lengths));
+
+  PetscCall(RDyAlloc(PetscReal, num_edges, &edges->cn));
+  PetscCall(RDyAlloc(PetscReal, num_edges, &edges->sn));
+  PetscCall(RDyFill(PetscReal, edges->cn, num_edges, 0.0));
+  PetscCall(RDyFill(PetscReal, edges->sn, num_edges, 0.0));
 
   for (PetscInt iedge = 0; iedge < num_edges; iedge++) {
     edges->ids[iedge] = iedge;
@@ -557,6 +575,10 @@ typedef struct RDyMesh {
   PetscInt num_cells_local;
   /// number of edges in the mesh attached to locally stored cells
   PetscInt num_edges;
+  /// number of edges that are internal (i.e. shared by two cells)
+  PetscInt num_internal_edges;
+  /// number of edges that are on the boundary
+  PetscInt num_boundary_edges;
   /// number of vertices in the mesh attached to locally stored cells
   PetscInt num_vertices;
   /// number of faces on the domain boundary attached to locally stored cells
@@ -582,6 +604,102 @@ typedef struct RDyMesh {
   /// mapping of global cells to application/natural cells
   PetscInt *nG2A;
 } RDyMesh;
+
+/// Computes attributes about an edges needed by RDycore.
+/// @param [in] dm A DM that provides edge data
+/// @param [inout] mesh A pointer to an RDyMesh mesh data.
+///
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
+  PetscFunctionBegin;
+
+  RDyCells *cells = &mesh->cells;
+  RDyEdges *edges = &mesh->edges;
+
+  PetscInt cStart, cEnd;
+  PetscInt eStart, eEnd;
+  PetscInt vStart, vEnd;
+  DMPlexGetHeightStratum(dm, 0, &cStart, &cEnd);
+  DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
+  DMPlexGetDepthStratum(dm, 0, &vStart, &vEnd);
+
+  for (PetscInt e = eStart; e < eEnd; e++) {
+    PetscInt iedge = e - eStart;
+
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
+
+    PetscBool is_internal_edge = (r >= 0 && l >= 0);
+
+    if (is_internal_edge) {
+      mesh->num_internal_edges++;
+    } else {
+      mesh->num_boundary_edges++;
+    }
+
+    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
+      // It is a vertical edge, so
+      // cn = 0.0 and sn = +/- 1.0
+
+      if (is_internal_edge) {
+        PetscReal yr     = cells->centroids[r].X[1];
+        PetscReal yl     = cells->centroids[l].X[1];
+        PetscReal dy_l2r = yr - yl;
+        if (dy_l2r < 0.0) {
+          edges->sn[iedge] = -1.0;
+        } else {
+          edges->sn[iedge] = 1.0;
+        }
+      } else {
+        edges->sn[iedge] = 1.0;
+      }
+
+    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
+      // It is a horizontal edge, so
+      // sn = 0.0 and cn = +/- 1.0
+      if (is_internal_edge) {
+        PetscReal xr     = cells->centroids[r].X[0];
+        PetscReal xl     = cells->centroids[l].X[0];
+        PetscReal dx_l2r = xr - xl;
+        if (dx_l2r < 0.0) {
+          edges->cn[iedge] = -1.0;
+        } else {
+          edges->cn[iedge] = 1.0;
+        }
+      } else {
+        edges->cn[iedge] = 1.0;
+      }
+
+    } else {
+      printf("The code only support quad cells with edges that align with x and y axis\n");
+      exit(0);
+    }
+  }
+
+  // allocate memory to save IDs of internal and boundary edges
+  PetscCall(RDyAlloc(PetscInt, mesh->num_internal_edges, &edges->internal_edge_ids));
+  PetscCall(RDyAlloc(PetscInt, mesh->num_boundary_edges, &edges->boundary_edge_ids));
+
+  // now save the IDs
+  mesh->num_internal_edges = 0;
+  mesh->num_boundary_edges = 0;
+
+  for (PetscInt e = eStart; e < eEnd; e++) {
+    PetscInt iedge      = e - eStart;
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
+
+    if (r >= 0 && l >= 0) {
+      edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
+    } else {
+      edges->boundary_edge_ids[mesh->num_boundary_edges++] = iedge;
+    }
+  }
+
+  PetscFunctionReturn(0);
+}
 
 static PetscErrorCode SaveNaturalCellIDs(DM dm, RDyCells *cells, PetscInt rank) {
   PetscFunctionBegin;
@@ -664,7 +782,9 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   // Determine the number of edges in the mesh
   PetscInt eStart, eEnd;
   DMPlexGetDepthStratum(dm, 1, &eStart, &eEnd);
-  mesh->num_edges = eEnd - eStart;
+  mesh->num_edges          = eEnd - eStart;
+  mesh->num_internal_edges = 0;
+  mesh->num_boundary_edges = 0;
 
   // Determine the number of vertices in the mesh
   PetscInt vStart, vEnd;
@@ -675,6 +795,7 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   PetscCall(RDyCellsCreateFromDM(dm, &mesh->cells));
   PetscCall(RDyEdgesCreateFromDM(dm, &mesh->edges));
   PetscCall(RDyVerticesCreateFromDM(dm, &mesh->vertices));
+  PetscCall(RDyComputeAdditionalEdgeAttributes(dm, mesh));
 
   // Count up local cells.
   mesh->num_cells_local = 0;
@@ -746,7 +867,7 @@ struct _n_RDyApp {
   /// index of current timestep
   PetscInt tstep;
 
-  PetscInt  dof;
+  PetscInt  ndof;
   Vec       B, localB;
   Vec       localX;
   PetscBool debug, save, add_building;
@@ -781,7 +902,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   app->hu     = 10.0;  // water depth for the upstream of dam   [m]
   app->hd     = 5.0;   // water depth for the downstream of dam [m]
   app->tiny_h = 1e-7;
-  app->dof    = 3;
+  app->ndof   = 3;
 
   MPI_Comm_size(app->comm, &app->comm_size);
   MPI_Comm_rank(app->comm, &app->rank);
@@ -952,7 +1073,7 @@ static PetscErrorCode SetInitialCondition(RDyApp app, Vec X) {
   VecGetArray(X, &x_ptr);
 
   for (PetscInt icell = 0; icell < mesh->num_cells_local; icell++) {
-    PetscInt ndof = 3;
+    PetscInt ndof = app->ndof;
     PetscInt idx  = icell * ndof;
     if (cells->centroids[icell].X[1] < 95.0) {
       x_ptr[idx] = app->hu;
@@ -1047,6 +1168,7 @@ PetscErrorCode AddBuildings(RDyApp app) {
 }
 
 /// @brief Computes flux based on Roe solver
+/// @param N Size of the array
 /// @param [in] hl Height left of the edge
 /// @param [in] hr Height right of the edge
 /// @param [in] ul Velocity in x-dir left of the edge
@@ -1058,114 +1180,417 @@ PetscErrorCode AddBuildings(RDyApp app) {
 /// @param [out] fij flux
 /// @param [out] amax maximum wave speed
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode solver(PetscReal hl, PetscReal hr, PetscReal ul, PetscReal ur, PetscReal vl, PetscReal vr, PetscReal sn, PetscReal cn,
-                      PetscScalar *fij, PetscScalar *amax) {
+PetscErrorCode solver(PetscInt N, const PetscReal hl[N], const PetscReal hr[N], const PetscReal ul[N], const PetscReal ur[N], const PetscReal vl[N],
+                      const PetscReal vr[N], const PetscReal sn[N], const PetscReal cn[N], PetscReal fij[N][3], PetscReal amax[N]) {
   PetscFunctionBeginUser;
 
   PetscReal grav = 9.806;
 
-  // Compute Roe averages
-  PetscReal duml  = pow(hl, 0.5);
-  PetscReal dumr  = pow(hr, 0.5);
-  PetscReal cl    = pow(grav * hl, 0.5);
-  PetscReal cr    = pow(grav * hr, 0.5);
-  PetscReal hhat  = duml * dumr;
-  PetscReal uhat  = (duml * ul + dumr * ur) / (duml + dumr);
-  PetscReal vhat  = (duml * vl + dumr * vr) / (duml + dumr);
-  PetscReal chat  = pow(0.5 * grav * (hl + hr), 0.5);
-  PetscReal uperp = uhat * cn + vhat * sn;
+  for (PetscInt n = 0; n < N; n++) {
+    // Compute Roe averages
+    PetscReal duml  = pow(hl[n], 0.5);
+    PetscReal dumr  = pow(hr[n], 0.5);
+    PetscReal cl    = pow(grav * hl[n], 0.5);
+    PetscReal cr    = pow(grav * hr[n], 0.5);
+    PetscReal hhat  = duml * dumr;
+    PetscReal uhat  = (duml * ul[n] + dumr * ur[n]) / (duml + dumr);
+    PetscReal vhat  = (duml * vl[n] + dumr * vr[n]) / (duml + dumr);
+    PetscReal chat  = pow(0.5 * grav * (hl[n] + hr[n]), 0.5);
+    PetscReal uperp = uhat * cn[n] + vhat * sn[n];
 
-  PetscReal dh     = hr - hl;
-  PetscReal du     = ur - ul;
-  PetscReal dv     = vr - vl;
-  PetscReal dupar  = -du * sn + dv * cn;
-  PetscReal duperp = du * cn + dv * sn;
+    PetscReal dh     = hr[n] - hl[n];
+    PetscReal du     = ur[n] - ul[n];
+    PetscReal dv     = vr[n] - vl[n];
+    PetscReal dupar  = -du * sn[n] + dv * cn[n];
+    PetscReal duperp = du * cn[n] + dv * sn[n];
 
-  PetscReal dW[3];
-  dW[0] = 0.5 * (dh - hhat * duperp / chat);
-  dW[1] = hhat * dupar;
-  dW[2] = 0.5 * (dh + hhat * duperp / chat);
+    PetscReal dW[3];
+    dW[0] = 0.5 * (dh - hhat * duperp / chat);
+    dW[1] = hhat * dupar;
+    dW[2] = 0.5 * (dh + hhat * duperp / chat);
 
-  PetscReal uperpl = ul * cn + vl * sn;
-  PetscReal uperpr = ur * cn + vr * sn;
-  PetscReal al1    = uperpl - cl;
-  PetscReal al3    = uperpl + cl;
-  PetscReal ar1    = uperpr - cr;
-  PetscReal ar3    = uperpr + cr;
+    PetscReal uperpl = ul[n] * cn[n] + vl[n] * sn[n];
+    PetscReal uperpr = ur[n] * cn[n] + vr[n] * sn[n];
+    PetscReal al1    = uperpl - cl;
+    PetscReal al3    = uperpl + cl;
+    PetscReal ar1    = uperpr - cr;
+    PetscReal ar3    = uperpr + cr;
 
-  PetscReal R[3][3];
-  R[0][0] = 1.0;
-  R[0][1] = 0.0;
-  R[0][2] = 1.0;
-  R[1][0] = uhat - chat * cn;
-  R[1][1] = -sn;
-  R[1][2] = uhat + chat * cn;
-  R[2][0] = vhat - chat * sn;
-  R[2][1] = cn;
-  R[2][2] = vhat + chat * sn;
+    PetscReal R[3][3];
+    R[0][0] = 1.0;
+    R[0][1] = 0.0;
+    R[0][2] = 1.0;
+    R[1][0] = uhat - chat * cn[n];
+    R[1][1] = -sn[n];
+    R[1][2] = uhat + chat * cn[n];
+    R[2][0] = vhat - chat * sn[n];
+    R[2][1] = cn[n];
+    R[2][2] = vhat + chat * sn[n];
 
-  PetscReal da1 = fmax(0.0, 2.0 * (ar1 - al1));
-  PetscReal da3 = fmax(0.0, 2.0 * (ar3 - al3));
-  PetscReal a1  = fabs(uperp - chat);
-  PetscReal a2  = fabs(uperp);
-  PetscReal a3  = fabs(uperp + chat);
+    PetscReal da1 = fmax(0.0, 2.0 * (ar1 - al1));
+    PetscReal da3 = fmax(0.0, 2.0 * (ar3 - al3));
+    PetscReal a1  = fabs(uperp - chat);
+    PetscReal a2  = fabs(uperp);
+    PetscReal a3  = fabs(uperp + chat);
 
-  // Critical flow fix
-  if (a1 < da1) {
-    a1 = 0.5 * (a1 * a1 / da1 + da1);
-  }
-  if (a3 < da3) {
-    a3 = 0.5 * (a3 * a3 / da3 + da3);
-  }
-
-  // Compute interface flux
-  PetscReal A[3][3];
-  for (PetscInt i = 0; i < 3; i++) {
-    for (PetscInt j = 0; j < 3; j++) {
-      A[i][j] = 0.0;
+    // Critical flow fix
+    if (a1 < da1) {
+      a1 = 0.5 * (a1 * a1 / da1 + da1);
     }
+    if (a3 < da3) {
+      a3 = 0.5 * (a3 * a3 / da3 + da3);
+    }
+
+    // Compute interface flux
+    PetscReal A[3][3];
+    for (PetscInt i = 0; i < 3; i++) {
+      for (PetscInt j = 0; j < 3; j++) {
+        A[i][j] = 0.0;
+      }
+    }
+    A[0][0] = a1;
+    A[1][1] = a2;
+    A[2][2] = a3;
+
+    PetscReal FL[3], FR[3];
+    FL[0] = uperpl * hl[n];
+    FL[1] = ul[n] * uperpl * hl[n] + 0.5 * grav * hl[n] * hl[n] * cn[n];
+    FL[2] = vl[n] * uperpl * hl[n] + 0.5 * grav * hl[n] * hl[n] * sn[n];
+
+    FR[0] = uperpr * hr[n];
+    FR[1] = ur[n] * uperpr * hr[n] + 0.5 * grav * hr[n] * hr[n] * cn[n];
+    FR[2] = vr[n] * uperpr * hr[n] + 0.5 * grav * hr[n] * hr[n] * sn[n];
+
+    // fij = 0.5*(FL + FR - matmul(R,matmul(A,dW))
+    fij[n][0] = 0.5 * (FL[0] + FR[0] - R[0][0] * A[0][0] * dW[0] - R[0][1] * A[1][1] * dW[1] - R[0][2] * A[2][2] * dW[2]);
+    fij[n][1] = 0.5 * (FL[1] + FR[1] - R[1][0] * A[0][0] * dW[0] - R[1][1] * A[1][1] * dW[1] - R[1][2] * A[2][2] * dW[2]);
+    fij[n][2] = 0.5 * (FL[2] + FR[2] - R[2][0] * A[0][0] * dW[0] - R[2][1] * A[1][1] * dW[1] - R[2][2] * A[2][2] * dW[2]);
+
+    amax[n] = chat + fabs(uperp);
   }
-  A[0][0] = a1;
-  A[1][1] = a2;
-  A[2][2] = a3;
-
-  PetscReal FL[3], FR[3];
-  FL[0] = uperpl * hl;
-  FL[1] = ul * uperpl * hl + 0.5 * grav * hl * hl * cn;
-  FL[2] = vl * uperpl * hl + 0.5 * grav * hl * hl * sn;
-
-  FR[0] = uperpr * hr;
-  FR[1] = ur * uperpr * hr + 0.5 * grav * hr * hr * cn;
-  FR[2] = vr * uperpr * hr + 0.5 * grav * hr * hr * sn;
-
-  // fij = 0.5*(FL + FR - matmul(R,matmul(A,dW))
-  fij[0] = 0.5 * (FL[0] + FR[0] - R[0][0] * A[0][0] * dW[0] - R[0][1] * A[1][1] * dW[1] - R[0][2] * A[2][2] * dW[2]);
-  fij[1] = 0.5 * (FL[1] + FR[1] - R[1][0] * A[0][0] * dW[0] - R[1][1] * A[1][1] * dW[1] - R[1][2] * A[2][2] * dW[2]);
-  fij[2] = 0.5 * (FL[2] + FR[2] - R[2][0] * A[0][0] * dW[0] - R[2][1] * A[1][1] * dW[1] - R[2][2] * A[2][2] * dW[2]);
-
-  *amax = chat + fabs(uperp);
 
   PetscFunctionReturn(0);
 }
 
 /// @brief Computes velocities in x and y-dir based on momentum in x and y-dir
+/// @param N Size of the array
 /// @param tiny_h Threshold value for height
 /// @param h Height
 /// @param hu Momentum in x-dir
 /// @param hv Momentum in y-dir
 /// @param u Velocity in x-dir
-/// @param v Velocit in y-dir
+/// @param v Velocity in y-dir
 /// @return 0 on success, or a non-zero error code on failure
-static PetscErrorCode GetVelocityFromMomentum(PetscReal tiny_h, PetscReal h, PetscReal hu, PetscReal hv, PetscReal *u, PetscReal *v) {
+static PetscErrorCode GetVelocityFromMomentum(PetscInt N, PetscReal tiny_h, const PetscReal h[N], const PetscReal hu[N], const PetscReal hv[N],
+                                              PetscReal u[N], PetscReal v[N]) {
   PetscFunctionBeginUser;
 
-  if (h < tiny_h) {
-    *u = 0.0;
-    *v = 0.0;
-  } else {
-    *u = hu / h;
-    *v = hv / h;
+  for (PetscInt n = 0; n < N; n++) {
+    if (h[n] < tiny_h) {
+      u[n] = 0.0;
+      v[n] = 0.0;
+    } else {
+      u[n] = hu[n] / h[n];
+      v[n] = hv[n] / h[n];
+    }
   }
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief It computes RHSFunction for internal edges
+/// @param [inout] app A RDyApp struct
+/// @param [inout] F A global flux Vec
+PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_value) {
+  PetscFunctionBeginUser;
+
+  RDyMesh  *mesh  = &app->mesh;
+  RDyCells *cells = &mesh->cells;
+  RDyEdges *edges = &mesh->edges;
+
+  // Get pointers to vector data
+  PetscScalar *x_ptr, *f_ptr, *b_ptr;
+  PetscCall(VecGetArray(app->localX, &x_ptr));
+  PetscCall(VecGetArray(F, &f_ptr));
+  PetscCall(VecGetArray(app->localB, &b_ptr));
+
+  PetscInt  ndof = app->ndof;
+  PetscInt  num  = mesh->num_internal_edges;
+  PetscReal hl_vec_int[num], hul_vec_int[num], hvl_vec_int[num], ul_vec_int[num], vl_vec_int[num];
+  PetscReal hr_vec_int[num], hur_vec_int[num], hvr_vec_int[num], ur_vec_int[num], vr_vec_int[num];
+  PetscReal sn_vec_int[num], cn_vec_int[num];
+  PetscReal flux_vec_int[num][3], amax_vec_int[num];
+
+  // Collect the h/hu/hv for left and right cells to compute u/v
+  for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
+    PetscInt iedge      = edges->internal_edge_ids[ii];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+    PetscInt r          = edges->cell_ids[cellOffset + 1];
+
+    hl_vec_int[ii]  = x_ptr[l * ndof + 0];
+    hul_vec_int[ii] = x_ptr[l * ndof + 1];
+    hvl_vec_int[ii] = x_ptr[l * ndof + 2];
+
+    hr_vec_int[ii]  = x_ptr[r * ndof + 0];
+    hur_vec_int[ii] = x_ptr[r * ndof + 1];
+    hvr_vec_int[ii] = x_ptr[r * ndof + 2];
+  }
+
+  // Compute u/v for left and right cells
+  PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hl_vec_int, hul_vec_int, hvl_vec_int, ul_vec_int, vl_vec_int));
+  PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hr_vec_int, hur_vec_int, hvr_vec_int, ur_vec_int, vr_vec_int));
+
+  // Update u/v for reflective internal edges
+  for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
+    PetscInt  iedge      = edges->internal_edge_ids[ii];
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscReal bl         = b_ptr[l];
+    PetscReal br         = b_ptr[r];
+
+    cn_vec_int[ii] = edges->cn[iedge];
+    sn_vec_int[ii] = edges->sn[iedge];
+
+    PetscBool is_edge_vertical;
+    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
+      is_edge_vertical = PETSC_TRUE;
+    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
+      is_edge_vertical = PETSC_FALSE;
+    } else {
+      printf("The code only support quad cells with edges that align with x and y axis\n");
+      exit(0);
+    }
+
+    if (bl == 1 && br == 0) {
+      // Update left values as it is a reflective boundary wall
+      hl_vec_int[ii] = hr_vec_int[ii];
+      if (is_edge_vertical) {
+        ul_vec_int[ii] = ur_vec_int[ii];
+        vl_vec_int[ii] = -vr_vec_int[ii];
+      } else {
+        ul_vec_int[ii] = -ur_vec_int[ii];
+        vl_vec_int[ii] = vr_vec_int[ii];
+      }
+
+    } else if (bl == 0 && br == 1) {
+      // Update right values as it is a reflective boundary wall
+      hr_vec_int[ii] = hl_vec_int[ii];
+      if (is_edge_vertical) {
+        ur_vec_int[ii] = ul_vec_int[ii];
+        vr_vec_int[ii] = -vl_vec_int[ii];
+      } else {
+        ur_vec_int[ii] = -ul_vec_int[ii];
+        vr_vec_int[ii] = vl_vec_int[ii];
+      }
+    }
+  }
+
+  // Call Riemann solver
+  PetscCall(solver(num, hl_vec_int, hr_vec_int, ul_vec_int, ur_vec_int, vl_vec_int, vr_vec_int, sn_vec_int, cn_vec_int, flux_vec_int, amax_vec_int));
+
+  // Save the flux values in the Vec based by TS
+  for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
+    PetscInt  iedge      = edges->internal_edge_ids[ii];
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscInt  r          = edges->cell_ids[cellOffset + 1];
+    PetscReal edgeLen    = edges->lengths[iedge];
+
+    PetscReal hl = x_ptr[l * ndof + 0];
+    PetscReal hr = x_ptr[r * ndof + 0];
+    PetscReal bl = b_ptr[l];
+    PetscReal br = b_ptr[r];
+
+    *amax_value = fmax(*amax_value, amax_vec_int[ii]);
+
+    if (bl == 0 && br == 0) {
+      // Both, left and right cells are not reflective boundary walls
+      if (!(hr < app->tiny_h && hl < app->tiny_h)) {
+        PetscReal areal = cells->areas[l];
+        PetscReal arear = cells->areas[r];
+
+        for (PetscInt idof = 0; idof < ndof; idof++) {
+          if (cells->is_local[l]) f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
+          if (cells->is_local[r]) f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
+        }
+      }
+
+    } else if (bl == 1 && br == 0) {
+      // Left cell is a reflective boundary wall and right cell is an internal cell
+
+      PetscReal arear = cells->areas[r];
+      for (PetscInt idof = 0; idof < ndof; idof++) {
+        if (cells->is_local[r]) f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
+      }
+
+    } else if (bl == 0 && br == 1) {
+      // Left cell is an internal cell and right cell is a reflective boundary wall
+
+      PetscReal areal = cells->areas[l];
+      for (PetscInt idof = 0; idof < ndof; idof++) {
+        if (cells->is_local[l]) f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
+      }
+    }
+  }
+
+  // Restore vectors
+  PetscCall(VecRestoreArray(app->localX, &x_ptr));
+  PetscCall(VecRestoreArray(F, &f_ptr));
+  PetscCall(VecRestoreArray(app->localB, &b_ptr));
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief It computes RHSFunction for boundary edges
+/// @param [inout] app A RDyApp struct
+/// @param [inout] F A global flux Vec
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_value) {
+  PetscFunctionBeginUser;
+
+  RDyMesh  *mesh  = &app->mesh;
+  RDyCells *cells = &mesh->cells;
+  RDyEdges *edges = &mesh->edges;
+
+  // Get pointers to vector data
+  PetscScalar *x_ptr, *f_ptr, *b_ptr;
+  PetscCall(VecGetArray(app->localX, &x_ptr));
+  PetscCall(VecGetArray(F, &f_ptr));
+  PetscCall(VecGetArray(app->localB, &b_ptr));
+
+  PetscInt  ndof = app->ndof;
+  PetscInt  num  = mesh->num_boundary_edges;
+  PetscReal hl_vec_bnd[num], hul_vec_bnd[num], hvl_vec_bnd[num], ul_vec_bnd[num], vl_vec_bnd[num];
+  PetscReal hr_vec_bnd[num], ur_vec_bnd[num], vr_vec_bnd[num];
+  PetscReal sn_vec_bnd[num], cn_vec_bnd[num];
+  PetscReal flux_vec_bnd[num][3], amax_vec_bnd[num];
+
+  // Collect the h/hu/hv for left cells to compute u/v
+  for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
+    PetscInt iedge      = edges->boundary_edge_ids[ii];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+
+    hl_vec_bnd[ii]  = x_ptr[l * ndof + 1];
+    hul_vec_bnd[ii] = x_ptr[l * ndof + 1];
+    hvl_vec_bnd[ii] = x_ptr[l * ndof + 2];
+  }
+
+  // Compute u/v for left cells
+  PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hl_vec_bnd, hul_vec_bnd, hvl_vec_bnd, ul_vec_bnd, vl_vec_bnd));
+
+  // Compute h/u/v for right cells
+  for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
+    PetscInt iedge      = edges->boundary_edge_ids[ii];
+    PetscInt cellOffset = edges->cell_offsets[iedge];
+    PetscInt l          = edges->cell_ids[cellOffset];
+
+    cn_vec_bnd[ii] = edges->cn[iedge];
+    sn_vec_bnd[ii] = edges->sn[iedge];
+
+    PetscBool is_edge_vertical;
+    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
+      is_edge_vertical = PETSC_TRUE;
+    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
+      is_edge_vertical = PETSC_FALSE;
+    } else {
+      printf("The code only support quad cells with edges that align with x and y axis\n");
+      exit(0);
+    }
+
+    if (cells->is_local[l] && b_ptr[l] == 0) {
+      // Perform computation for a boundary edge
+
+      PetscBool bnd_cell_order_flipped = PETSC_FALSE;
+
+      if (is_edge_vertical) {
+        if (cells->centroids[l].X[1] > edges->centroids[iedge].X[1]) bnd_cell_order_flipped = PETSC_TRUE;
+      } else {
+        if (cells->centroids[l].X[0] > edges->centroids[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
+      }
+
+      if (cells->is_local[l] && b_ptr[l] == 0) {
+        hr_vec_bnd[ii] = hl_vec_bnd[ii];
+        if (is_edge_vertical) {
+          ur_vec_bnd[ii] = ul_vec_bnd[ii];
+          vr_vec_bnd[ii] = -vl_vec_bnd[ii];
+        } else {
+          ur_vec_bnd[ii] = -ul_vec_bnd[ii];
+          vr_vec_bnd[ii] = vl_vec_bnd[ii];
+        }
+
+        if (bnd_cell_order_flipped) {
+          PetscReal tmp;
+
+          tmp            = hl_vec_bnd[ii];
+          hl_vec_bnd[ii] = hr_vec_bnd[ii];
+          hr_vec_bnd[ii] = tmp;
+
+          tmp            = ul_vec_bnd[ii];
+          ul_vec_bnd[ii] = ur_vec_bnd[ii];
+          ur_vec_bnd[ii] = tmp;
+
+          tmp            = vl_vec_bnd[ii];
+          vl_vec_bnd[ii] = vr_vec_bnd[ii];
+          vr_vec_bnd[ii] = tmp;
+        }
+      }
+    }
+  }
+
+  // Call Riemann solver
+  PetscCall(solver(num, hl_vec_bnd, hr_vec_bnd, ul_vec_bnd, ur_vec_bnd, vl_vec_bnd, vr_vec_bnd, sn_vec_bnd, cn_vec_bnd, flux_vec_bnd, amax_vec_bnd));
+
+  // Save the flux values in the Vec based by TS
+  for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
+    PetscInt  iedge      = edges->boundary_edge_ids[ii];
+    PetscInt  cellOffset = edges->cell_offsets[iedge];
+    PetscInt  l          = edges->cell_ids[cellOffset];
+    PetscReal edgeLen    = edges->lengths[iedge];
+    PetscReal areal      = cells->areas[l];
+
+    PetscBool is_edge_vertical;
+    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
+      is_edge_vertical = PETSC_TRUE;
+    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
+      is_edge_vertical = PETSC_FALSE;
+    } else {
+      printf("The code only support quad cells with edges that align with x and y axis\n");
+      exit(0);
+    }
+
+    if (cells->is_local[l] && b_ptr[l] == 0) {
+      // Perform computation for a boundary edge
+
+      PetscBool bnd_cell_order_flipped = PETSC_FALSE;
+
+      if (is_edge_vertical) {
+        if (cells->centroids[l].X[1] > edges->centroids[iedge].X[1]) bnd_cell_order_flipped = PETSC_TRUE;
+      } else {
+        if (cells->centroids[l].X[0] > edges->centroids[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
+      }
+
+      PetscReal hl = x_ptr[l * ndof + 0];
+
+      if (!(hl < app->tiny_h)) {
+        *amax_value = fmax(*amax_value, amax_vec_bnd[ii]);
+        for (PetscInt idof = 0; idof < ndof; idof++) {
+          if (!bnd_cell_order_flipped) {
+            f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
+          } else {
+            f_ptr[l * ndof + idof] += flux_vec_bnd[ii][idof] * edgeLen / areal;
+          }
+        }
+      }
+    }
+  }
+
+  // Restore vectors
+  PetscCall(VecRestoreArray(app->localX, &x_ptr));
+  PetscCall(VecRestoreArray(F, &f_ptr));
+  PetscCall(VecRestoreArray(app->localB, &b_ptr));
 
   PetscFunctionReturn(0);
 }
@@ -1181,12 +1606,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscFunctionBeginUser;
 
   RDyApp app = ptr;
-
-  DM        dm    = app->dm;
-  RDyMesh  *mesh  = &app->mesh;
-  RDyCells *cells = &mesh->cells;
-  RDyEdges *edges = &mesh->edges;
-  // RDyVertices *vertices = &mesh->vertices;
+  DM     dm  = app->dm;
 
   app->tstep = app->tstep + 1;
 
@@ -1194,223 +1614,13 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(DMGlobalToLocalEnd(dm, X, INSERT_VALUES, app->localX));
   PetscCall(VecZeroEntries(F));
 
-  // Get pointers to vector data
-  PetscScalar *x_ptr, *f_ptr, *b_ptr;
-  PetscCall(VecGetArray(app->localX, &x_ptr));
-  PetscCall(VecGetArray(F, &f_ptr));
-  PetscCall(VecGetArray(app->localB, &b_ptr));
-
-  PetscInt  dof        = 3;
   PetscReal amax_value = 0.0;
-
-  for (PetscInt iedge = 0; iedge < mesh->num_edges; iedge++) {
-    PetscInt  cellOffset = edges->cell_offsets[iedge];
-    PetscInt  l          = edges->cell_ids[cellOffset];
-    PetscInt  r          = edges->cell_ids[cellOffset + 1];
-    PetscReal edgeLen    = edges->lengths[iedge];
-
-    PetscBool is_edge_vertical;
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      is_edge_vertical = PETSC_TRUE;
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      is_edge_vertical = PETSC_FALSE;
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
-
-    if (r >= 0 && l >= 0) {
-      // Perform computation for an internal edge
-
-      PetscReal hl = x_ptr[l * dof + 0];
-      PetscReal hr = x_ptr[r * dof + 0];
-      PetscReal bl = b_ptr[l];
-      PetscReal br = b_ptr[r];
-
-      // It is assumed that the flux is computed from the left (l) cell to 'right'.
-      // Check to make sure cell 'l' is actually left of the edge.
-      PetscReal cn = 0.0;
-      PetscReal sn = 0.0;
-      if (is_edge_vertical) {
-        PetscReal yr     = cells->centroids[r].X[1];
-        PetscReal yl     = cells->centroids[l].X[1];
-        PetscReal dy_l2r = yr - yl;
-        if (dy_l2r < 0.0) {
-          sn = -1.0;
-        } else {
-          sn = 1.0;
-        }
-      } else {
-        PetscReal xr     = cells->centroids[r].X[0];
-        PetscReal xl     = cells->centroids[l].X[0];
-        PetscReal dx_l2r = xr - xl;
-        if (dx_l2r < 0.0) {
-          cn = -1.0;
-        } else {
-          cn = 1.0;
-        }
-      }
-
-      if (bl == 0 && br == 0) {
-        // Both, left and right cells are not boundary walls
-        if (!(hr < app->tiny_h && hl < app->tiny_h)) {
-          PetscReal hul   = x_ptr[l * dof + 1];
-          PetscReal hvl   = x_ptr[l * dof + 2];
-          PetscReal hur   = x_ptr[r * dof + 1];
-          PetscReal hvr   = x_ptr[r * dof + 2];
-          PetscReal areal = cells->areas[l];
-          PetscReal arear = cells->areas[r];
-
-          PetscReal ur, vr, ul, vl;
-
-          PetscCall(GetVelocityFromMomentum(app->tiny_h, hr, hur, hvr, &ur, &vr));
-          PetscCall(GetVelocityFromMomentum(app->tiny_h, hl, hul, hvl, &ul, &vl));
-
-          PetscReal flux[3], amax;
-          PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-          amax_value = fmax(amax_value, amax);
-
-          for (PetscInt idof = 0; idof < dof; idof++) {
-            if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
-            if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
-          }
-        }
-
-      } else if (bl == 1 && br == 0) {
-        // Left cell is a boundary wall and right cell is an internal cell
-
-        PetscReal hr  = x_ptr[r * dof + 0];
-        PetscReal hur = x_ptr[r * dof + 1];
-        PetscReal hvr = x_ptr[r * dof + 2];
-
-        PetscReal ur, vr;
-        PetscCall(GetVelocityFromMomentum(app->tiny_h, hr, hur, hvr, &ur, &vr));
-
-        PetscReal hl = hr;
-        PetscReal ul, vl;
-        if (is_edge_vertical) {
-          ul = ur;
-          vl = -vr;
-        } else {
-          ul = -ur;
-          vl = vr;
-        }
-
-        PetscReal flux[3], amax;
-        PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value, amax);
-
-        PetscReal arear = cells->areas[r];
-        for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[r]) f_ptr[r * dof + idof] += flux[idof] * edgeLen / arear;
-        }
-
-      } else if (bl == 0 && br == 1) {
-        // Left cell is an internal cell and right cell is a boundary wall
-
-        PetscReal hl  = x_ptr[l * dof + 0];
-        PetscReal hul = x_ptr[l * dof + 1];
-        PetscReal hvl = x_ptr[l * dof + 2];
-
-        PetscReal ul, vl;
-        PetscCall(GetVelocityFromMomentum(app->tiny_h, hl, hul, hvl, &ul, &vl));
-
-        PetscReal hr = hl;
-        PetscReal ur, vr;
-        if (is_edge_vertical) {
-          ur = ul;
-          vr = -vl;
-        } else {
-          ur = -ul;
-          vr = vl;
-        }
-
-        PetscReal flux[3], amax;
-        PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value, amax);
-
-        PetscReal areal = cells->areas[l];
-        for (PetscInt idof = 0; idof < dof; idof++) {
-          if (cells->is_local[l]) f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
-        }
-      }
-
-    } else if (cells->is_local[l] && b_ptr[l] == 0) {
-      // Perform computation for a boundary edge
-
-      PetscReal cn = 0.0;
-      PetscReal sn = 0.0;
-
-      if (is_edge_vertical) {
-        sn = 1.0;
-      } else {
-        cn = 1.0;
-      }
-
-      PetscBool bnd_cell_order_flipped = PETSC_FALSE;
-
-      if (is_edge_vertical) {
-        if (cells->centroids[l].X[1] > edges->centroids[iedge].X[1]) bnd_cell_order_flipped = PETSC_TRUE;
-      } else {
-        if (cells->centroids[l].X[0] > edges->centroids[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
-      }
-
-      PetscReal hl = x_ptr[l * dof + 0];
-
-      if (!(hl < app->tiny_h)) {
-        PetscReal hul = x_ptr[l * dof + 1];
-        PetscReal hvl = x_ptr[l * dof + 2];
-
-        PetscReal ul, vl;
-        PetscCall(GetVelocityFromMomentum(app->tiny_h, hl, hul, hvl, &ul, &vl));
-
-        PetscReal hr, ur, vr;
-        hr = hl;
-        if (is_edge_vertical) {
-          ur = ul;
-          vr = -vl;
-        } else {
-          ur = -ul;
-          vr = vl;
-        }
-
-        if (bnd_cell_order_flipped) {
-          PetscReal tmp;
-          tmp = hl;
-          hl  = hr;
-          hr  = tmp;
-          tmp = ul;
-          ul  = ur;
-          ur  = tmp;
-          tmp = vl;
-          vl  = vr;
-          vr  = tmp;
-        }
-
-        PetscReal flux[3], amax;
-        PetscCall(solver(hl, hr, ul, ur, vl, vr, sn, cn, flux, &amax));
-        amax_value = fmax(amax_value, amax);
-
-        PetscReal areal = cells->areas[l];
-        for (PetscInt idof = 0; idof < dof; idof++) {
-          if (!bnd_cell_order_flipped) {
-            f_ptr[l * dof + idof] -= flux[idof] * edgeLen / areal;
-          } else {
-            f_ptr[l * dof + idof] += flux[idof] * edgeLen / areal;
-          }
-        }
-      }
-    }
-  }
-
-  // Restore vectors
-  PetscCall(VecRestoreArray(app->localX, &x_ptr));
-  PetscCall(VecRestoreArray(F, &f_ptr));
-  PetscCall(VecRestoreArray(app->localB, &b_ptr));
+  PetscCall(RHSFunctionForInternalEdges(app, F, &amax_value));
+  PetscCall(RHSFunctionForBoundaryEdges(app, F, &amax_value));
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
+    sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
 
@@ -1421,7 +1631,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscCall(VecView(natural, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
 
-    sprintf(fname, "outputs/ex2_flux_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
+    sprintf(fname, "outputs/ex2b_flux_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(DMPlexGlobalToNaturalBegin(app->dm, F, natural));
     PetscCall(DMPlexGlobalToNaturalEnd(app->dm, F, natural));
@@ -1474,7 +1684,7 @@ int main(int argc, char **argv) {
   PetscCall(SetInitialCondition(app, X));
   {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2_Nx_%d_Ny_%d_dt_%f_IC_np%d.dat", app->Nx, app->Ny, app->dt, app->comm_size);
+    sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_IC_np%d.dat", app->Nx, app->Ny, app->dt, app->comm_size);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
@@ -1514,7 +1724,7 @@ int main(int argc, char **argv) {
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex1_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->Nt, app->comm_size);
+    sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->Nt, app->comm_size);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
