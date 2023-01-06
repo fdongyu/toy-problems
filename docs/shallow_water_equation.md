@@ -6,7 +6,7 @@ The shallow water equations are given by
 
 \begin{equation}
 \label{eqn:swe}
-\frac{\partial\mathbf{U}}{\partial t} + \frac{\partial \mathbf{E}}{\partial x} + \frac{\partial \mathbf{G}}{\partial x} = \mathbf{S}
+\frac{\partial\mathbf{U}}{\partial t} + \frac{\partial \mathbf{E}}{\partial x} + \frac{\partial \mathbf{G}}{\partial y} = \mathbf{S}
 \end{equation}
 
 where 
@@ -63,10 +63,10 @@ $n$ is the Manning's coefficient.
 \begin{eqnarray}
 \frac{\partial}{\partial t} \int_\Omega \mathbf{U} d\Omega + 
 \int_\Omega \frac{\partial\mathbf{E}}{\partial x}  d\Omega + 
-\int_\Omega \frac{\partial\mathbf{G}}{\partial x}  d\Omega +  &=&
+\int_\Omega \frac{\partial\mathbf{G}}{\partial y}  d\Omega +  &=&
 \int_\Omega \mathbf{S} d\Omega \nonumber\\
 \frac{\partial}{\partial t} \int_\Omega \mathbf{U} d\Omega + 
-\oint_{d\Omega} \left( \mathbf{E}dy  - \mathbf{G} dx \right) ds &=&
+\oint_{d\Omega} \left( \mathbf{E}dy  - \mathbf{G} dx \right) &=&
 \int_\Omega \mathbf{S} d\Omega \nonumber\\
  \frac{\partial}{\partial t} \int_\Omega \mathbf{U} d\Omega + 
 \int_{d\Omega} \left( \mathbf{F} . \mathbf{n} \right) ds +  &=&
