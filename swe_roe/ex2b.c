@@ -615,6 +615,21 @@ typedef struct RDyMesh {
   PetscInt *nG2A;
 } RDyMesh;
 
+/// @brief Computes the cross product of two 3D vectors
+/// @param a A RDyVector a
+/// @param b A RDyVector b
+/// @param c A RDyVector c
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode VecCrossProduct(RDyVector a, RDyVector b, RDyVector *c) {
+  PetscFunctionBegin;
+
+  c->V[0] =  (a.V[1] * b.V[2] - a.V[2] * b.V[1]);
+  c->V[1] = -(a.V[0] * b.V[2] - a.V[2] * b.V[0]);
+  c->V[2] =  (a.V[0] * b.V[1] - a.V[1] * b.V[0]);
+
+  PetscFunctionReturn(0);
+}
+
 /// Computes attributes about an edges needed by RDycore.
 /// @param [in] dm A DM that provides edge data
 /// @param [inout] mesh A pointer to an RDyMesh mesh data.
@@ -623,8 +638,9 @@ typedef struct RDyMesh {
 PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
   PetscFunctionBegin;
 
-  RDyCells *cells = &mesh->cells;
-  RDyEdges *edges = &mesh->edges;
+  RDyCells *cells       = &mesh->cells;
+  RDyEdges *edges       = &mesh->edges;
+  RDyVertices *vertices = &mesh->vertices;
 
   PetscInt cStart, cEnd;
   PetscInt eStart, eEnd;
@@ -640,13 +656,91 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     PetscInt l          = edges->cell_ids[cellOffset];
     PetscInt r          = edges->cell_ids[cellOffset + 1];
 
-    PetscBool is_internal_edge = (r >= 0 && l >= 0);
+    assert(l >= 0);
+    PetscBool is_internal_edge = (r >= 0);
 
     if (is_internal_edge) {
       mesh->num_internal_edges++;
     } else {
       mesh->num_boundary_edges++;
     }
+
+    /*
+                 Case-1                      Case-2                       Update Case-2
+
+                    v2                         v2                             v1
+                   /|\                        /|\                             |
+                    |                          |                              |
+                    |---> normal               | ----> normal     normal <----|
+                    |                          |                              |
+             L -----|-----> R          R <-----|----- L               R <-----|----- L
+                    |                          |                              |
+                    |                          |                              |
+                    |                          |                             \|/
+                    v1                         v1                             v2
+
+    In DMPlex, the cross product of the normal vector to the edge and vector joining the
+    vertices of the edge (i.e. v1Tov2)  always points in the positive z-direction.
+    However, the vector joining the left and the right cell may not be in the same direction
+    as the normal vector to the edge (Case-2). Thus, the edge information in the Case-2 is
+    updated by spawing the vertex ids and flipping the edge normal.
+    */
+
+    PetscInt v_offset = iedge*2;
+    PetscInt vid_1 = edges->vertex_ids[v_offset + 0];
+    PetscInt vid_2 = edges->vertex_ids[v_offset + 1];
+
+    RDyVector edge_parallel;
+    for (PetscInt idim = 0; idim < 3; idim++) {
+      edge_parallel.V[idim] = vertices->points[vid_2].X[idim] - vertices->points[vid_1].X[idim];
+    }
+
+    RDyVector vec_cross_1;
+    PetscCall(VecCrossProduct(edges->normals[iedge], edge_parallel, &vec_cross_1));
+    assert(vec_cross_1.V[2] >= 0.0);
+
+    // In case of an internal edge, a vector from the left cell to the right cell
+    // In case of a boundary edge, a vector from the left cell to edge centroid
+    RDyVector vec_L2RorEC;
+
+    if (is_internal_edge) {
+
+      for (PetscInt idim = 0; idim < 3; idim++) {
+        vec_L2RorEC.V[idim] = cells->centroids[r].X[idim] - cells->centroids[l].X[idim];
+      }
+
+    } else {
+      for (PetscInt idim = 0; idim < 3; idim++) {
+        vec_L2RorEC.V[idim] = edges->centroids[iedge].X[idim] - cells->centroids[l].X[idim];
+      }
+    }
+
+    RDyVector vec_cross_2;
+    PetscCall(VecCrossProduct(vec_L2RorEC, edge_parallel, &vec_cross_2));
+
+    if (vec_cross_2.V[2] < 0.0) {
+      // Flip vertex ids and the normal vector
+      edges->vertex_ids[v_offset + 0] = vid_2;
+      edges->vertex_ids[v_offset + 1] = vid_1;
+      for (PetscInt idim = 0; idim < 3; idim++) {
+        edges->normals[iedge].V[idim] = -edges->normals[iedge].V[idim];
+      }
+    }
+
+    vid_1 = edges->vertex_ids[v_offset + 0];
+    vid_2 = edges->vertex_ids[v_offset + 1];
+
+    PetscReal x1 = vertices->points[vid_1].X[0];
+    PetscReal y1 = vertices->points[vid_1].X[1];
+    PetscReal x2 = vertices->points[vid_2].X[0];
+    PetscReal y2 = vertices->points[vid_2].X[1];
+
+    PetscReal dx = x2 - x1;
+    PetscReal dy = y2 - y1;
+    PetscReal ds = PetscSqrtReal(PetscPowReal(dx,2.0) + PetscPowReal(dy,2.0));
+
+    edges->sn[iedge] = -dx/ds;
+    edges->cn[iedge] =  dy/ds;
 
     if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
       // It is a vertical edge, so
@@ -1152,6 +1246,12 @@ static PetscErrorCode CreateDM(RDyApp app) {
     DMDestroy(&app->dm);
     app->dm = dmDist;
   }
+
+  DM dmInterp;
+  PetscCall(DMPlexInterpolate(app->dm, &dmInterp));
+  PetscCall(DMDestroy(&app->dm));
+  app->dm = dmInterp;
+
   PetscCall(DMViewFromOptions(app->dm, NULL, "-dm_view"));
 
   PetscFunctionReturn(0);
