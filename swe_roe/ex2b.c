@@ -742,43 +742,6 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     edges->sn[iedge] = -dx/ds;
     edges->cn[iedge] =  dy/ds;
 
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      // It is a vertical edge, so
-      // cn = 0.0 and sn = +/- 1.0
-
-      if (is_internal_edge) {
-        PetscReal yr     = cells->centroids[r].X[1];
-        PetscReal yl     = cells->centroids[l].X[1];
-        PetscReal dy_l2r = yr - yl;
-        if (dy_l2r < 0.0) {
-          edges->sn[iedge] = -1.0;
-        } else {
-          edges->sn[iedge] = 1.0;
-        }
-      } else {
-        edges->sn[iedge] = 1.0;
-      }
-
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      // It is a horizontal edge, so
-      // sn = 0.0 and cn = +/- 1.0
-      if (is_internal_edge) {
-        PetscReal xr     = cells->centroids[r].X[0];
-        PetscReal xl     = cells->centroids[l].X[0];
-        PetscReal dx_l2r = xr - xl;
-        if (dx_l2r < 0.0) {
-          edges->cn[iedge] = -1.0;
-        } else {
-          edges->cn[iedge] = 1.0;
-        }
-      } else {
-        edges->cn[iedge] = 1.0;
-      }
-
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
   }
 
   // allocate memory to save IDs of internal and boundary edges
