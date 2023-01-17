@@ -309,6 +309,9 @@ PetscErrorCode RDyVerticesCreate(PetscInt num_vertices, RDyVertices *vertices) {
 
   for (PetscInt ivertex = 0; ivertex < num_vertices; ivertex++) {
     vertices->ids[ivertex] = ivertex;
+    for (PetscInt idim = 0; idim <3; idim++) {
+      vertices->points[ivertex].X[idim] = 0.0;
+    }
   }
 
   for (PetscInt ivertex = 0; ivertex <= num_vertices; ivertex++) {
@@ -351,7 +354,8 @@ PetscErrorCode RDyVerticesCreateFromDM(DM dm, RDyVertices *vertices) {
 
     PetscCall(DMPlexGetTransitiveClosure(dm, v, PETSC_FALSE, &pSize, &p));
 
-    PetscInt coordOffset, dim = 2;
+    PetscInt coordOffset, dim;
+    PetscCall(DMGetCoordinateDim(dm,&dim));
     PetscSectionGetOffset(coordSection, v, &coordOffset);
     for (PetscInt idim = 0; idim < dim; idim++) {
       vertices->points[ivertex].X[idim] = coords[coordOffset + idim];
