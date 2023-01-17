@@ -1162,6 +1162,12 @@ static PetscErrorCode CreateDM(RDyApp app) {
   } else {
     DMPlexCreateFromFile(app->comm, app->filename, "ex2.c", PETSC_FALSE, &app->dm);
   }
+
+  DM dmInterp;
+  PetscCall(DMPlexInterpolate(app->dm, &dmInterp));
+  PetscCall(DMDestroy(&app->dm));
+  app->dm = dmInterp;
+
   PetscCall(DMPlexDistributeSetDefault(app->dm, PETSC_FALSE));
 
   PetscObjectSetName((PetscObject)app->dm, "Mesh");
@@ -1213,11 +1219,6 @@ static PetscErrorCode CreateDM(RDyApp app) {
     DMDestroy(&app->dm);
     app->dm = dmDist;
   }
-
-  DM dmInterp;
-  PetscCall(DMPlexInterpolate(app->dm, &dmInterp));
-  PetscCall(DMDestroy(&app->dm));
-  app->dm = dmInterp;
 
   PetscCall(DMViewFromOptions(app->dm, NULL, "-dm_view"));
 
