@@ -1567,37 +1567,25 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
     cn_vec_int[ii] = edges->cn[iedge];
     sn_vec_int[ii] = edges->sn[iedge];
 
-    PetscBool is_edge_vertical;
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      is_edge_vertical = PETSC_TRUE;
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      is_edge_vertical = PETSC_FALSE;
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
-
     if (bl == 1 && br == 0) {
       // Update left values as it is a reflective boundary wall
       hl_vec_int[ii] = hr_vec_int[ii];
-      if (is_edge_vertical) {
-        ul_vec_int[ii] = ur_vec_int[ii];
-        vl_vec_int[ii] = -vr_vec_int[ii];
-      } else {
-        ul_vec_int[ii] = -ur_vec_int[ii];
-        vl_vec_int[ii] = vr_vec_int[ii];
-      }
+
+      PetscReal dum1 = PetscPowReal(sn_vec_int[ii],2.0) - PetscPowReal(cn_vec_int[ii],2.0);
+      PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
+
+      ul_vec_int[ii] =  ur_vec_int[ii] * dum1 - vr_vec_int[ii]*dum2;
+      vl_vec_int[ii] = -ur_vec_int[ii] * dum2 - vr_vec_int[ii]*dum1;
 
     } else if (bl == 0 && br == 1) {
       // Update right values as it is a reflective boundary wall
       hr_vec_int[ii] = hl_vec_int[ii];
-      if (is_edge_vertical) {
-        ur_vec_int[ii] = ul_vec_int[ii];
-        vr_vec_int[ii] = -vl_vec_int[ii];
-      } else {
-        ur_vec_int[ii] = -ul_vec_int[ii];
-        vr_vec_int[ii] = vl_vec_int[ii];
-      }
+
+      PetscReal dum1 = PetscPowReal(sn_vec_int[ii],2.0) - PetscPowReal(cn_vec_int[ii],2.0);
+      PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
+
+      ur_vec_int[ii] =  ul_vec_int[ii] * dum1 - vl_vec_int[ii]*dum2;
+      vr_vec_int[ii] = -ul_vec_int[ii] * dum2 - vl_vec_int[ii]*dum1;
     }
   }
 
@@ -1704,52 +1692,18 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     cn_vec_bnd[ii] = edges->cn[iedge];
     sn_vec_bnd[ii] = edges->sn[iedge];
 
-    PetscBool is_edge_vertical;
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      is_edge_vertical = PETSC_TRUE;
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      is_edge_vertical = PETSC_FALSE;
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
-
     if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
 
-      PetscBool bnd_cell_order_flipped = PETSC_FALSE;
-
-      if (is_edge_vertical) {
-        if (cells->centroids[l].X[1] > edges->centroids[iedge].X[1]) bnd_cell_order_flipped = PETSC_TRUE;
-      } else {
-        if (cells->centroids[l].X[0] > edges->centroids[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
-      }
-
       if (cells->is_local[l] && b_ptr[l] == 0) {
         hr_vec_bnd[ii] = hl_vec_bnd[ii];
-        if (is_edge_vertical) {
-          ur_vec_bnd[ii] = ul_vec_bnd[ii];
-          vr_vec_bnd[ii] = -vl_vec_bnd[ii];
-        } else {
-          ur_vec_bnd[ii] = -ul_vec_bnd[ii];
-          vr_vec_bnd[ii] = vl_vec_bnd[ii];
-        }
 
-        if (bnd_cell_order_flipped) {
-          PetscReal tmp;
+        PetscReal dum1 = PetscPowReal(sn_vec_bnd[ii],2.0) - PetscPowReal(cn_vec_bnd[ii],2.0);
+        PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
 
-          tmp            = hl_vec_bnd[ii];
-          hl_vec_bnd[ii] = hr_vec_bnd[ii];
-          hr_vec_bnd[ii] = tmp;
+        ur_vec_bnd[ii] =  ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii]*dum2;
+        vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii]*dum1;
 
-          tmp            = ul_vec_bnd[ii];
-          ul_vec_bnd[ii] = ur_vec_bnd[ii];
-          ur_vec_bnd[ii] = tmp;
-
-          tmp            = vl_vec_bnd[ii];
-          vl_vec_bnd[ii] = vr_vec_bnd[ii];
-          vr_vec_bnd[ii] = tmp;
-        }
       }
     }
   }
@@ -1765,37 +1719,15 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     PetscReal edgeLen    = edges->lengths[iedge];
     PetscReal areal      = cells->areas[l];
 
-    PetscBool is_edge_vertical;
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      is_edge_vertical = PETSC_TRUE;
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      is_edge_vertical = PETSC_FALSE;
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
-
     if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
-
-      PetscBool bnd_cell_order_flipped = PETSC_FALSE;
-
-      if (is_edge_vertical) {
-        if (cells->centroids[l].X[1] > edges->centroids[iedge].X[1]) bnd_cell_order_flipped = PETSC_TRUE;
-      } else {
-        if (cells->centroids[l].X[0] > edges->centroids[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
-      }
 
       PetscReal hl = x_ptr[l * ndof + 0];
 
       if (!(hl < app->tiny_h)) {
         *amax_value = fmax(*amax_value, amax_vec_bnd[ii]);
         for (PetscInt idof = 0; idof < ndof; idof++) {
-          if (!bnd_cell_order_flipped) {
-            f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
-          } else {
-            f_ptr[l * ndof + idof] += flux_vec_bnd[ii][idof] * edgeLen / areal;
-          }
+          f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
         }
       }
     }
