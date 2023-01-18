@@ -694,36 +694,43 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     PetscInt vid_1 = edges->vertex_ids[v_offset + 0];
     PetscInt vid_2 = edges->vertex_ids[v_offset + 1];
 
-    RDyVector edge_parallel;
-    for (PetscInt idim = 0; idim < 3; idim++) {
+    RDyVector edge_parallel; // a vector parallel along the edge in 2D
+    for (PetscInt idim = 0; idim < 2; idim++) {
       edge_parallel.V[idim] = vertices->points[vid_2].X[idim] - vertices->points[vid_1].X[idim];
     }
+    edge_parallel.V[2] = 0.0;
 
-    RDyVector vec_cross_1;
-    PetscCall(VecCrossProduct(edges->normals[iedge], edge_parallel, &vec_cross_1));
-    assert(vec_cross_1.V[2] >= 0.0);
-
-    // In case of an internal edge, a vector from the left cell to the right cell
-    // In case of a boundary edge, a vector from the left cell to edge centroid
+    // In case of an internal edge, a vector from the left cell to the right cell.
+    // In case of a boundary edge, a vector from the left cell to edge centroid.
+    // Note: This is a vector in 2D.
     RDyVector vec_L2RorEC;
 
     if (is_internal_edge) {
 
-      for (PetscInt idim = 0; idim < 3; idim++) {
+      for (PetscInt idim = 0; idim < 2; idim++) {
         vec_L2RorEC.V[idim] = cells->centroids[r].X[idim] - cells->centroids[l].X[idim];
       }
 
     } else {
-      for (PetscInt idim = 0; idim < 3; idim++) {
+      for (PetscInt idim = 0; idim < 2; idim++) {
         vec_L2RorEC.V[idim] = edges->centroids[iedge].X[idim] - cells->centroids[l].X[idim];
       }
     }
+    vec_L2RorEC.V[2] = 0.0;
 
-    RDyVector vec_cross_2;
-    PetscCall(VecCrossProduct(vec_L2RorEC, edge_parallel, &vec_cross_2));
+    // Compute a vector perpendicular to the edge_parallel vector via a clockwise
+    // 90 degree rotation
+    RDyVector edge_perp;
+    edge_perp.V[0] =  edge_parallel.V[1];
+    edge_perp.V[1] = -edge_parallel.V[0];
 
-    if (vec_cross_2.V[2] < 0.0) {
-      // Flip vertex ids and the normal vector
+    // Compute the dot product to check if vector joining L-to-R is pointing
+    // in the direction of the vector perpendicular to the edge.
+    PetscReal dot_prod = vec_L2RorEC.V[0] * edge_perp.V[0] + vec_L2RorEC.V[1] * edge_perp.V[1];
+
+    if (dot_prod < 0.0) {
+      // The angle between edge_perp and vec_L2RorEC is greater than 90 deg.
+      // Thus, flip vertex ids and the normal vector
       edges->vertex_ids[v_offset + 0] = vid_2;
       edges->vertex_ids[v_offset + 1] = vid_1;
       for (PetscInt idim = 0; idim < 3; idim++) {
