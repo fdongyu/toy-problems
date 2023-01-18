@@ -309,7 +309,7 @@ PetscErrorCode RDyVerticesCreate(PetscInt num_vertices, RDyVertices *vertices) {
 
   for (PetscInt ivertex = 0; ivertex < num_vertices; ivertex++) {
     vertices->ids[ivertex] = ivertex;
-    for (PetscInt idim = 0; idim <3; idim++) {
+    for (PetscInt idim = 0; idim < 3; idim++) {
       vertices->points[ivertex].X[idim] = 0.0;
     }
   }
@@ -355,7 +355,7 @@ PetscErrorCode RDyVerticesCreateFromDM(DM dm, RDyVertices *vertices) {
     PetscCall(DMPlexGetTransitiveClosure(dm, v, PETSC_FALSE, &pSize, &p));
 
     PetscInt coordOffset, dim;
-    PetscCall(DMGetCoordinateDim(dm,&dim));
+    PetscCall(DMGetCoordinateDim(dm, &dim));
     PetscSectionGetOffset(coordSection, v, &coordOffset);
     for (PetscInt idim = 0; idim < dim; idim++) {
       vertices->points[ivertex].X[idim] = coords[coordOffset + idim];
@@ -627,9 +627,9 @@ typedef struct RDyMesh {
 PetscErrorCode VecCrossProduct(RDyVector a, RDyVector b, RDyVector *c) {
   PetscFunctionBegin;
 
-  c->V[0] =  (a.V[1] * b.V[2] - a.V[2] * b.V[1]);
+  c->V[0] = (a.V[1] * b.V[2] - a.V[2] * b.V[1]);
   c->V[1] = -(a.V[0] * b.V[2] - a.V[2] * b.V[0]);
-  c->V[2] =  (a.V[0] * b.V[1] - a.V[1] * b.V[0]);
+  c->V[2] = (a.V[0] * b.V[1] - a.V[1] * b.V[0]);
 
   PetscFunctionReturn(0);
 }
@@ -642,8 +642,8 @@ PetscErrorCode VecCrossProduct(RDyVector a, RDyVector b, RDyVector *c) {
 PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
   PetscFunctionBegin;
 
-  RDyCells *cells       = &mesh->cells;
-  RDyEdges *edges       = &mesh->edges;
+  RDyCells    *cells    = &mesh->cells;
+  RDyEdges    *edges    = &mesh->edges;
   RDyVertices *vertices = &mesh->vertices;
 
   PetscInt cStart, cEnd;
@@ -690,11 +690,11 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     updated by spawing the vertex ids and flipping the edge normal.
     */
 
-    PetscInt v_offset = iedge*2;
-    PetscInt vid_1 = edges->vertex_ids[v_offset + 0];
-    PetscInt vid_2 = edges->vertex_ids[v_offset + 1];
+    PetscInt v_offset = iedge * 2;
+    PetscInt vid_1    = edges->vertex_ids[v_offset + 0];
+    PetscInt vid_2    = edges->vertex_ids[v_offset + 1];
 
-    RDyVector edge_parallel; // a vector parallel along the edge in 2D
+    RDyVector edge_parallel;  // a vector parallel along the edge in 2D
     for (PetscInt idim = 0; idim < 2; idim++) {
       edge_parallel.V[idim] = vertices->points[vid_2].X[idim] - vertices->points[vid_1].X[idim];
     }
@@ -706,7 +706,6 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     RDyVector vec_L2RorEC;
 
     if (is_internal_edge) {
-
       for (PetscInt idim = 0; idim < 2; idim++) {
         vec_L2RorEC.V[idim] = cells->centroids[r].X[idim] - cells->centroids[l].X[idim];
       }
@@ -721,7 +720,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     // Compute a vector perpendicular to the edge_parallel vector via a clockwise
     // 90 degree rotation
     RDyVector edge_perp;
-    edge_perp.V[0] =  edge_parallel.V[1];
+    edge_perp.V[0] = edge_parallel.V[1];
     edge_perp.V[1] = -edge_parallel.V[0];
 
     // Compute the dot product to check if vector joining L-to-R is pointing
@@ -748,11 +747,10 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
 
     PetscReal dx = x2 - x1;
     PetscReal dy = y2 - y1;
-    PetscReal ds = PetscSqrtReal(PetscPowReal(dx,2.0) + PetscPowReal(dy,2.0));
+    PetscReal ds = PetscSqrtReal(PetscPowReal(dx, 2.0) + PetscPowReal(dy, 2.0));
 
-    edges->sn[iedge] = -dx/ds;
-    edges->cn[iedge] =  dy/ds;
-
+    edges->sn[iedge] = -dx / ds;
+    edges->cn[iedge] = dy / ds;
   }
 
   // allocate memory to save IDs of internal and boundary edges
@@ -1578,21 +1576,21 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       // Update left values as it is a reflective boundary wall
       hl_vec_int[ii] = hr_vec_int[ii];
 
-      PetscReal dum1 = PetscPowReal(sn_vec_int[ii],2.0) - PetscPowReal(cn_vec_int[ii],2.0);
+      PetscReal dum1 = PetscPowReal(sn_vec_int[ii], 2.0) - PetscPowReal(cn_vec_int[ii], 2.0);
       PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
 
-      ul_vec_int[ii] =  ur_vec_int[ii] * dum1 - vr_vec_int[ii]*dum2;
-      vl_vec_int[ii] = -ur_vec_int[ii] * dum2 - vr_vec_int[ii]*dum1;
+      ul_vec_int[ii] = ur_vec_int[ii] * dum1 - vr_vec_int[ii] * dum2;
+      vl_vec_int[ii] = -ur_vec_int[ii] * dum2 - vr_vec_int[ii] * dum1;
 
     } else if (bl == 0 && br == 1) {
       // Update right values as it is a reflective boundary wall
       hr_vec_int[ii] = hl_vec_int[ii];
 
-      PetscReal dum1 = PetscPowReal(sn_vec_int[ii],2.0) - PetscPowReal(cn_vec_int[ii],2.0);
+      PetscReal dum1 = PetscPowReal(sn_vec_int[ii], 2.0) - PetscPowReal(cn_vec_int[ii], 2.0);
       PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
 
-      ur_vec_int[ii] =  ul_vec_int[ii] * dum1 - vl_vec_int[ii]*dum2;
-      vr_vec_int[ii] = -ul_vec_int[ii] * dum2 - vl_vec_int[ii]*dum1;
+      ur_vec_int[ii] = ul_vec_int[ii] * dum1 - vl_vec_int[ii] * dum2;
+      vr_vec_int[ii] = -ul_vec_int[ii] * dum2 - vl_vec_int[ii] * dum1;
     }
   }
 
@@ -1705,12 +1703,11 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
       if (cells->is_local[l] && b_ptr[l] == 0) {
         hr_vec_bnd[ii] = hl_vec_bnd[ii];
 
-        PetscReal dum1 = PetscPowReal(sn_vec_bnd[ii],2.0) - PetscPowReal(cn_vec_bnd[ii],2.0);
+        PetscReal dum1 = PetscPowReal(sn_vec_bnd[ii], 2.0) - PetscPowReal(cn_vec_bnd[ii], 2.0);
         PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
 
-        ur_vec_bnd[ii] =  ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii]*dum2;
-        vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii]*dum1;
-
+        ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
+        vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
       }
     }
   }
