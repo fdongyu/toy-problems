@@ -871,8 +871,6 @@ PetscErrorCode RDyComputeAdditionalCellAttributes(RDyMesh *mesh) {
       PetscCall(ComputeSlopeInXAndYForATriangleCell(vertices->points[v0].X, vertices->points[v1].X, vertices->points[v2].X, &cells->dz_dx[icell],
                                                     &cells->dz_dy[icell]));
 
-      break;
-
     } else if (nverts == 4) {
       PetscInt offset = cells->vertex_offsets[icell];
       PetscInt v0     = cells->vertex_ids[offset + 0];
