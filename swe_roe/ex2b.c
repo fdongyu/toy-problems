@@ -178,10 +178,12 @@ PetscErrorCode RDyCellsCreateFromDM(DM dm, RDyCells *cells) {
   // allocate cell storage
   PetscCall(RDyCellsCreate(cEnd - cStart, cells));
 
+  PetscInt dim;
+  PetscCall(DMGetCoordinateDim(dm, &dim));
+
   for (PetscInt c = cStart; c < cEnd; c++) {
     PetscInt  icell = c - cStart;
     PetscInt  gref, junkInt;
-    PetscInt  dim = 2;
     PetscReal centroid[dim], normal[dim];
     PetscCall(DMPlexGetPointGlobal(dm, c, &gref, &junkInt));
     DMPlexComputeCellGeometryFVM(dm, c, &cells->areas[icell], &centroid[0], &normal[0]);
@@ -517,9 +519,11 @@ PetscErrorCode RDyEdgesCreateFromDM(DM dm, RDyEdges *edges) {
   // allocate edge storage
   PetscCall(RDyEdgesCreate(eEnd - eStart, edges));
 
+  PetscInt dim;
+  PetscCall(DMGetCoordinateDim(dm, &dim));
+
   for (PetscInt e = eStart; e < eEnd; e++) {
     PetscInt  iedge = e - eStart;
-    PetscInt  dim   = 2;
     PetscReal centroid[dim], normal[dim];
     DMPlexComputeCellGeometryFVM(dm, e, &edges->lengths[iedge], &centroid[0], &normal[0]);
 
