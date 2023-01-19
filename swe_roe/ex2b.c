@@ -716,7 +716,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
 
     } else {
       for (PetscInt idim = 0; idim < 2; idim++) {
-        vec_L2RorEC.V[idim] = edges->centroids[iedge].X[idim] - cells->centroids[l].X[idim];
+        vec_L2RorEC.V[idim] = (vertices->points[vid_2].X[idim] + vertices->points[vid_1].X[idim])/2.0 - cells->centroids[l].X[idim];
       }
     }
     vec_L2RorEC.V[2] = 0.0;
