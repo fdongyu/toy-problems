@@ -1682,7 +1682,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     PetscInt cellOffset = edges->cell_offsets[iedge];
     PetscInt l          = edges->cell_ids[cellOffset];
 
-    hl_vec_bnd[ii]  = x_ptr[l * ndof + 1];
+    hl_vec_bnd[ii]  = x_ptr[l * ndof + 0];
     hul_vec_bnd[ii] = x_ptr[l * ndof + 1];
     hvl_vec_bnd[ii] = x_ptr[l * ndof + 2];
   }
