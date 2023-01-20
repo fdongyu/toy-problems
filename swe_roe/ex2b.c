@@ -10,6 +10,8 @@ static char help[] = "Partial 2D dam break problem.\n";
 
 PetscReal GRAVITY = 9.806;
 
+#define Square(x) ((x) * (x))
+
 /// Allocates a block of memory of the given type, consisting of count
 /// contiguous elements and placing the allocated memory in the given result
 /// pointer. Memory is zero-initialized. Returns a PetscErrorCode.
@@ -751,7 +753,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
 
     PetscReal dx = x2 - x1;
     PetscReal dy = y2 - y1;
-    PetscReal ds = PetscSqrtReal(dx * dx + dy * dy);
+    PetscReal ds = PetscSqrtReal(Square(dx) + Square(dy));
 
     edges->sn[iedge] = -dx / ds;
     edges->cn[iedge] = dy / ds;
@@ -1577,7 +1579,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       // Update left values as it is a reflective boundary wall
       hl_vec_int[ii] = hr_vec_int[ii];
 
-      PetscReal dum1 = sn_vec_int[ii] * sn_vec_int[ii] - cn_vec_int[ii] * cn_vec_int[ii];
+      PetscReal dum1 = Square(sn_vec_int[ii]) - Square(cn_vec_int[ii]);
       PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
 
       ul_vec_int[ii] = ur_vec_int[ii] * dum1 - vr_vec_int[ii] * dum2;
@@ -1587,7 +1589,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       // Update right values as it is a reflective boundary wall
       hr_vec_int[ii] = hl_vec_int[ii];
 
-      PetscReal dum1 = sn_vec_int[ii] * sn_vec_int[ii] - cn_vec_int[ii] * cn_vec_int[ii];
+      PetscReal dum1 = Square(sn_vec_int[ii]) - Square(cn_vec_int[ii]);
       PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
 
       ur_vec_int[ii] = ul_vec_int[ii] * dum1 - vl_vec_int[ii] * dum2;
@@ -1704,7 +1706,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
       if (cells->is_local[l] && b_ptr[l] == 0) {
         hr_vec_bnd[ii] = hl_vec_bnd[ii];
 
-        PetscReal dum1 = sn_vec_bnd[ii] * sn_vec_bnd[ii] - cn_vec_bnd[ii] * cn_vec_bnd[ii];
+        PetscReal dum1 = Square(sn_vec_bnd[ii]) - Square(cn_vec_bnd[ii]);
         PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
 
         ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
@@ -1802,9 +1804,9 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
         PetscReal N_mannings        = GRAVITY * Uniform_roughness * Uniform_roughness;
 
         // Cd = g n^2 h^{-1/3}, where n is Manning's coefficient
-        PetscReal Cd = GRAVITY * N_mannings * N_mannings * PetscPowReal(h, -1.0 / 3.0);
+        PetscReal Cd = GRAVITY * Square(N_mannings) * PetscPowReal(h, -1.0 / 3.0);
 
-        PetscReal velocity = PetscSqrtReal(u * u + v * v);
+        PetscReal velocity = PetscSqrtReal(Square(u) + Square(v));
 
         PetscReal tb = Cd * velocity / h;
 
