@@ -8,6 +8,10 @@ static char help[] = "Partial 2D dam break problem.\n";
 #include <petscts.h>
 #include <petscvec.h>
 
+PetscReal GRAVITY = 9.806;
+
+#define Square(x) ((x) * (x))
+
 /// Allocates a block of memory of the given type, consisting of count
 /// contiguous elements and placing the allocated memory in the given result
 /// pointer. Memory is zero-initialized. Returns a PetscErrorCode.
@@ -87,6 +91,12 @@ typedef struct {
   RDyPoint *centroids;
   /// cell areas
   PetscReal *areas;
+
+  /// surface slope in x-dir
+  PetscReal *dz_dx;
+  /// surface slope in y-dir
+  PetscReal *dz_dy;
+
 } RDyCells;
 
 /// Allocates and initializes an RDyCells struct.
@@ -133,6 +143,8 @@ PetscErrorCode RDyCellsCreate(PetscInt num_cells, RDyCells *cells) {
 
   PetscCall(RDyAlloc(RDyPoint, num_cells, &cells->centroids));
   PetscCall(RDyAlloc(PetscReal, num_cells, &cells->areas));
+  PetscCall(RDyAlloc(PetscReal, num_cells, &cells->dz_dx));
+  PetscCall(RDyAlloc(PetscReal, num_cells, &cells->dz_dy));
 
   for (PetscInt icell = 0; icell < num_cells; icell++) {
     cells->ids[icell]           = icell;
@@ -168,10 +180,12 @@ PetscErrorCode RDyCellsCreateFromDM(DM dm, RDyCells *cells) {
   // allocate cell storage
   PetscCall(RDyCellsCreate(cEnd - cStart, cells));
 
+  PetscInt dim;
+  PetscCall(DMGetCoordinateDim(dm, &dim));
+
   for (PetscInt c = cStart; c < cEnd; c++) {
     PetscInt  icell = c - cStart;
     PetscInt  gref, junkInt;
-    PetscInt  dim = 2;
     PetscReal centroid[dim], normal[dim];
     PetscCall(DMPlexGetPointGlobal(dm, c, &gref, &junkInt));
     DMPlexComputeCellGeometryFVM(dm, c, &cells->areas[icell], &centroid[0], &normal[0]);
@@ -299,6 +313,9 @@ PetscErrorCode RDyVerticesCreate(PetscInt num_vertices, RDyVertices *vertices) {
 
   for (PetscInt ivertex = 0; ivertex < num_vertices; ivertex++) {
     vertices->ids[ivertex] = ivertex;
+    for (PetscInt idim = 0; idim < 3; idim++) {
+      vertices->points[ivertex].X[idim] = 0.0;
+    }
   }
 
   for (PetscInt ivertex = 0; ivertex <= num_vertices; ivertex++) {
@@ -341,7 +358,8 @@ PetscErrorCode RDyVerticesCreateFromDM(DM dm, RDyVertices *vertices) {
 
     PetscCall(DMPlexGetTransitiveClosure(dm, v, PETSC_FALSE, &pSize, &p));
 
-    PetscInt coordOffset, dim = 2;
+    PetscInt coordOffset, dim;
+    PetscCall(DMGetCoordinateDim(dm, &dim));
     PetscSectionGetOffset(coordSection, v, &coordOffset);
     for (PetscInt idim = 0; idim < dim; idim++) {
       vertices->points[ivertex].X[idim] = coords[coordOffset + idim];
@@ -503,9 +521,11 @@ PetscErrorCode RDyEdgesCreateFromDM(DM dm, RDyEdges *edges) {
   // allocate edge storage
   PetscCall(RDyEdgesCreate(eEnd - eStart, edges));
 
+  PetscInt dim;
+  PetscCall(DMGetCoordinateDim(dm, &dim));
+
   for (PetscInt e = eStart; e < eEnd; e++) {
     PetscInt  iedge = e - eStart;
-    PetscInt  dim   = 2;
     PetscReal centroid[dim], normal[dim];
     DMPlexComputeCellGeometryFVM(dm, e, &edges->lengths[iedge], &centroid[0], &normal[0]);
 
@@ -605,6 +625,21 @@ typedef struct RDyMesh {
   PetscInt *nG2A;
 } RDyMesh;
 
+/// @brief Computes the cross product of two 3D vectors
+/// @param a A RDyVector a
+/// @param b A RDyVector b
+/// @param c A RDyVector c
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode CrossProduct(RDyVector a, RDyVector b, RDyVector *c) {
+  PetscFunctionBegin;
+
+  c->V[0] = (a.V[1] * b.V[2] - a.V[2] * b.V[1]);
+  c->V[1] = -(a.V[0] * b.V[2] - a.V[2] * b.V[0]);
+  c->V[2] = (a.V[0] * b.V[1] - a.V[1] * b.V[0]);
+
+  PetscFunctionReturn(0);
+}
+
 /// Computes attributes about an edges needed by RDycore.
 /// @param [in] dm A DM that provides edge data
 /// @param [inout] mesh A pointer to an RDyMesh mesh data.
@@ -613,8 +648,9 @@ typedef struct RDyMesh {
 PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
   PetscFunctionBegin;
 
-  RDyCells *cells = &mesh->cells;
-  RDyEdges *edges = &mesh->edges;
+  RDyCells    *cells    = &mesh->cells;
+  RDyEdges    *edges    = &mesh->edges;
+  RDyVertices *vertices = &mesh->vertices;
 
   PetscInt cStart, cEnd;
   PetscInt eStart, eEnd;
@@ -630,7 +666,8 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     PetscInt l          = edges->cell_ids[cellOffset];
     PetscInt r          = edges->cell_ids[cellOffset + 1];
 
-    PetscBool is_internal_edge = (r >= 0 && l >= 0);
+    assert(l >= 0);
+    PetscBool is_internal_edge = (r >= 0);
 
     if (is_internal_edge) {
       mesh->num_internal_edges++;
@@ -638,43 +675,88 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
       mesh->num_boundary_edges++;
     }
 
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      // It is a vertical edge, so
-      // cn = 0.0 and sn = +/- 1.0
+    /*
+                 Case-1                      Case-2                       Update Case-2
 
-      if (is_internal_edge) {
-        PetscReal yr     = cells->centroids[r].X[1];
-        PetscReal yl     = cells->centroids[l].X[1];
-        PetscReal dy_l2r = yr - yl;
-        if (dy_l2r < 0.0) {
-          edges->sn[iedge] = -1.0;
-        } else {
-          edges->sn[iedge] = 1.0;
-        }
-      } else {
-        edges->sn[iedge] = 1.0;
-      }
+                    v2                         v2                             v1
+                   /|\                        /|\                             |
+                    |                          |                              |
+                    |---> normal               | ----> normal     normal <----|
+                    |                          |                              |
+             L -----|-----> R          R <-----|----- L               R <-----|----- L
+                    |                          |                              |
+                    |                          |                              |
+                    |                          |                             \|/
+                    v1                         v1                             v2
 
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      // It is a horizontal edge, so
-      // sn = 0.0 and cn = +/- 1.0
-      if (is_internal_edge) {
-        PetscReal xr     = cells->centroids[r].X[0];
-        PetscReal xl     = cells->centroids[l].X[0];
-        PetscReal dx_l2r = xr - xl;
-        if (dx_l2r < 0.0) {
-          edges->cn[iedge] = -1.0;
-        } else {
-          edges->cn[iedge] = 1.0;
-        }
-      } else {
-        edges->cn[iedge] = 1.0;
+    In DMPlex, the cross product of the normal vector to the edge and vector joining the
+    vertices of the edge (i.e. v1Tov2)  always points in the positive z-direction.
+    However, the vector joining the left and the right cell may not be in the same direction
+    as the normal vector to the edge (Case-2). Thus, the edge information in the Case-2 is
+    updated by spawing the vertex ids and flipping the edge normal.
+    */
+
+    PetscInt v_offset = iedge * 2;
+    PetscInt vid_1    = edges->vertex_ids[v_offset + 0];
+    PetscInt vid_2    = edges->vertex_ids[v_offset + 1];
+
+    RDyVector edge_parallel;  // a vector parallel along the edge in 2D
+    for (PetscInt idim = 0; idim < 2; idim++) {
+      edge_parallel.V[idim] = vertices->points[vid_2].X[idim] - vertices->points[vid_1].X[idim];
+    }
+    edge_parallel.V[2] = 0.0;
+
+    // In case of an internal edge, a vector from the left cell to the right cell.
+    // In case of a boundary edge, a vector from the left cell to edge centroid.
+    // Note: This is a vector in 2D.
+    RDyVector vec_L2RorEC;
+
+    if (is_internal_edge) {
+      for (PetscInt idim = 0; idim < 2; idim++) {
+        vec_L2RorEC.V[idim] = cells->centroids[r].X[idim] - cells->centroids[l].X[idim];
       }
 
     } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
+      for (PetscInt idim = 0; idim < 2; idim++) {
+        vec_L2RorEC.V[idim] = (vertices->points[vid_2].X[idim] + vertices->points[vid_1].X[idim]) / 2.0 - cells->centroids[l].X[idim];
+      }
     }
+    vec_L2RorEC.V[2] = 0.0;
+
+    // Compute a vector perpendicular to the edge_parallel vector via a clockwise
+    // 90 degree rotation
+    RDyVector edge_perp;
+    edge_perp.V[0] = edge_parallel.V[1];
+    edge_perp.V[1] = -edge_parallel.V[0];
+
+    // Compute the dot product to check if vector joining L-to-R is pointing
+    // in the direction of the vector perpendicular to the edge.
+    PetscReal dot_prod = vec_L2RorEC.V[0] * edge_perp.V[0] + vec_L2RorEC.V[1] * edge_perp.V[1];
+
+    if (dot_prod < 0.0) {
+      // The angle between edge_perp and vec_L2RorEC is greater than 90 deg.
+      // Thus, flip vertex ids and the normal vector
+      edges->vertex_ids[v_offset + 0] = vid_2;
+      edges->vertex_ids[v_offset + 1] = vid_1;
+      for (PetscInt idim = 0; idim < 3; idim++) {
+        edges->normals[iedge].V[idim] *= -1.0;
+      }
+    }
+
+    vid_1 = edges->vertex_ids[v_offset + 0];
+    vid_2 = edges->vertex_ids[v_offset + 1];
+
+    PetscReal x1 = vertices->points[vid_1].X[0];
+    PetscReal y1 = vertices->points[vid_1].X[1];
+    PetscReal x2 = vertices->points[vid_2].X[0];
+    PetscReal y2 = vertices->points[vid_2].X[1];
+
+    PetscReal dx = x2 - x1;
+    PetscReal dy = y2 - y1;
+    PetscReal ds = PetscSqrtReal(Square(dx) + Square(dy));
+
+    edges->sn[iedge] = -dx / ds;
+    edges->cn[iedge] = dy / ds;
   }
 
   // allocate memory to save IDs of internal and boundary edges
@@ -695,6 +777,139 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
       edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
     } else {
       edges->boundary_edge_ids[mesh->num_boundary_edges++] = iedge;
+    }
+  }
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief Checks if the vertices forming the triangle are in counter clockwise direction
+/// @param [in] xyz0 Coordinates of the first vertex of the triangle
+/// @param [in] xyz1 Coordinates of the second vertex of the triangle
+/// @param [in] xyz2 Coordinates of the third vertex of the triangle
+/// @return 1 if the vertices are in counter clockwise direction, otherwise 0
+PetscBool AreVerticesOrientedCounterClockwise(PetscReal xyz0[3], PetscReal xyz1[3], PetscReal xyz2[3]) {
+  PetscFunctionBegin;
+
+  PetscBool result = PETSC_TRUE;
+
+  PetscReal x0, y0;
+  PetscReal x1, y1;
+  PetscReal x2, y2;
+
+  x0 = xyz0[0];
+  y0 = xyz0[1];
+  x1 = xyz1[0];
+  y1 = xyz1[1];
+  x2 = xyz2[0];
+  y2 = xyz2[1];
+
+  PetscFunctionReturn((y1 - y0) * (x2 - x1) - (y2 - y1) * (x1 - x0) < 0);
+
+  PetscFunctionReturn(result);
+}
+
+/// @brief Computes slope in x and y direction for a triangle (i.e. dz/dx and dz/dy)
+/// @param [in] xyz0 Coordinates of the first vertex of the triangle
+/// @param [in] xyz1 Coordinates of the second vertex of the triangle
+/// @param [in] xyz2 Coordinates of the third vertex of the triangle
+/// @param [out] *dz_dx Slope in x-direction
+/// @param [out] dz_dy Slope in y-direction
+/// @return 0 on success, or a non-zero error code on failure
+static PetscErrorCode ComputeXYSlopesForTriangle(PetscReal xyz0[3], PetscReal xyz1[3], PetscReal xyz2[3], PetscReal *dz_dx, PetscReal *dz_dy) {
+  PetscFunctionBegin;
+
+  PetscReal x0, y0, z0;
+  PetscReal x1, y1, z1;
+  PetscReal x2, y2, z2;
+
+  x0 = xyz0[0];
+  y0 = xyz0[1];
+  z0 = xyz0[2];
+
+  if (AreVerticesOrientedCounterClockwise(xyz0, xyz1, xyz2)) {
+    x1 = xyz1[0];
+    y1 = xyz1[1];
+    z1 = xyz1[2];
+    x2 = xyz2[0];
+    y2 = xyz2[1];
+    z2 = xyz2[2];
+  } else {
+    x1 = xyz2[0];
+    y1 = xyz2[1];
+    z1 = xyz2[2];
+    x2 = xyz1[0];
+    y2 = xyz1[1];
+    z2 = xyz1[2];
+  }
+
+  PetscReal num, den;
+  num    = (y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0);
+  den    = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
+  *dz_dx = num / den;
+
+  num    = (x2 - x0) * (z1 - z0) - (x1 - x0) * (z2 - z0);
+  den    = (x2 - x0) * (y1 - y0) - (x1 - x0) * (y2 - y0);
+  *dz_dy = num / den;
+
+  PetscFunctionReturn(0);
+}
+
+/// Computes geometric attributes about a cell needed by RDycore.
+/// @param [inout] mesh A pointer to an RDyMesh mesh data.
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RDyComputeAdditionalCellAttributes(RDyMesh *mesh) {
+  PetscFunctionBegin;
+
+  RDyCells    *cells    = &mesh->cells;
+  RDyVertices *vertices = &mesh->vertices;
+
+  for (PetscInt icell = 0; icell < mesh->num_cells; icell++) {
+    PetscInt nverts = cells->num_vertices[icell];
+
+    if (nverts == 3) {
+      PetscInt offset = cells->vertex_offsets[icell];
+      PetscInt v0     = cells->vertex_ids[offset + 0];
+      PetscInt v1     = cells->vertex_ids[offset + 1];
+      PetscInt v2     = cells->vertex_ids[offset + 2];
+
+      PetscCall(ComputeXYSlopesForTriangle(vertices->points[v0].X, vertices->points[v1].X, vertices->points[v2].X, &cells->dz_dx[icell],
+                                           &cells->dz_dy[icell]));
+
+    } else if (nverts == 4) {
+      PetscInt offset = cells->vertex_offsets[icell];
+      PetscInt v0     = cells->vertex_ids[offset + 0];
+      PetscInt v1     = cells->vertex_ids[offset + 1];
+      PetscInt v2     = cells->vertex_ids[offset + 2];
+      PetscInt v3     = cells->vertex_ids[offset + 3];
+
+      PetscInt vertexIDs[4][2];
+      vertexIDs[0][0] = v0;
+      vertexIDs[0][1] = v1;
+      vertexIDs[1][0] = v1;
+      vertexIDs[1][1] = v2;
+      vertexIDs[2][0] = v2;
+      vertexIDs[2][1] = v3;
+      vertexIDs[3][0] = v3;
+      vertexIDs[3][1] = v0;
+
+      PetscReal dz_dx, dz_dy;
+      cells->dz_dx[icell] = 0.0;
+      cells->dz_dy[icell] = 0.0;
+
+      // TODO: Revisit the approach to compute dz/dx and dz/y for quad cells.
+      for (PetscInt ii = 0; ii < 4; ii++) {
+        PetscInt a = vertexIDs[ii][0];
+        PetscInt b = vertexIDs[ii][1];
+
+        PetscCall(ComputeXYSlopesForTriangle(vertices->points[a].X, vertices->points[b].X, cells->centroids[icell].X, &dz_dx, &dz_dy));
+        cells->dz_dx[icell] += 0.5 * dz_dx;
+        cells->dz_dy[icell] += 0.5 * dz_dy;
+      }
+
+    } else {
+      printf("The code only support cells with 3 or 4 vertices, but found a cell with num of vertices = %d\n", nverts);
+      exit(0);
     }
   }
 
@@ -796,6 +1011,7 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   PetscCall(RDyEdgesCreateFromDM(dm, &mesh->edges));
   PetscCall(RDyVerticesCreateFromDM(dm, &mesh->vertices));
   PetscCall(RDyComputeAdditionalEdgeAttributes(dm, mesh));
+  PetscCall(RDyComputeAdditionalCellAttributes(mesh));
 
   // Count up local cells.
   mesh->num_cells_local = 0;
@@ -955,6 +1171,12 @@ static PetscErrorCode CreateDM(RDyApp app) {
   } else {
     DMPlexCreateFromFile(app->comm, app->filename, "ex2.c", PETSC_FALSE, &app->dm);
   }
+
+  DM dmInterp;
+  PetscCall(DMPlexInterpolate(app->dm, &dmInterp));
+  PetscCall(DMDestroy(&app->dm));
+  app->dm = dmInterp;
+
   PetscCall(DMPlexDistributeSetDefault(app->dm, PETSC_FALSE));
 
   PetscObjectSetName((PetscObject)app->dm, "Mesh");
@@ -1006,6 +1228,7 @@ static PetscErrorCode CreateDM(RDyApp app) {
     DMDestroy(&app->dm);
     app->dm = dmDist;
   }
+
   PetscCall(DMViewFromOptions(app->dm, NULL, "-dm_view"));
 
   PetscFunctionReturn(0);
@@ -1353,37 +1576,25 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
     cn_vec_int[ii] = edges->cn[iedge];
     sn_vec_int[ii] = edges->sn[iedge];
 
-    PetscBool is_edge_vertical;
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      is_edge_vertical = PETSC_TRUE;
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      is_edge_vertical = PETSC_FALSE;
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
-
     if (bl == 1 && br == 0) {
       // Update left values as it is a reflective boundary wall
       hl_vec_int[ii] = hr_vec_int[ii];
-      if (is_edge_vertical) {
-        ul_vec_int[ii] = ur_vec_int[ii];
-        vl_vec_int[ii] = -vr_vec_int[ii];
-      } else {
-        ul_vec_int[ii] = -ur_vec_int[ii];
-        vl_vec_int[ii] = vr_vec_int[ii];
-      }
+
+      PetscReal dum1 = Square(sn_vec_int[ii]) - Square(cn_vec_int[ii]);
+      PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
+
+      ul_vec_int[ii] = ur_vec_int[ii] * dum1 - vr_vec_int[ii] * dum2;
+      vl_vec_int[ii] = -ur_vec_int[ii] * dum2 - vr_vec_int[ii] * dum1;
 
     } else if (bl == 0 && br == 1) {
       // Update right values as it is a reflective boundary wall
       hr_vec_int[ii] = hl_vec_int[ii];
-      if (is_edge_vertical) {
-        ur_vec_int[ii] = ul_vec_int[ii];
-        vr_vec_int[ii] = -vl_vec_int[ii];
-      } else {
-        ur_vec_int[ii] = -ul_vec_int[ii];
-        vr_vec_int[ii] = vl_vec_int[ii];
-      }
+
+      PetscReal dum1 = Square(sn_vec_int[ii]) - Square(cn_vec_int[ii]);
+      PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
+
+      ur_vec_int[ii] = ul_vec_int[ii] * dum1 - vl_vec_int[ii] * dum2;
+      vr_vec_int[ii] = -ul_vec_int[ii] * dum2 - vl_vec_int[ii] * dum1;
     }
   }
 
@@ -1473,7 +1684,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     PetscInt cellOffset = edges->cell_offsets[iedge];
     PetscInt l          = edges->cell_ids[cellOffset];
 
-    hl_vec_bnd[ii]  = x_ptr[l * ndof + 1];
+    hl_vec_bnd[ii]  = x_ptr[l * ndof + 0];
     hul_vec_bnd[ii] = x_ptr[l * ndof + 1];
     hvl_vec_bnd[ii] = x_ptr[l * ndof + 2];
   }
@@ -1490,52 +1701,17 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     cn_vec_bnd[ii] = edges->cn[iedge];
     sn_vec_bnd[ii] = edges->sn[iedge];
 
-    PetscBool is_edge_vertical;
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      is_edge_vertical = PETSC_TRUE;
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      is_edge_vertical = PETSC_FALSE;
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
-
     if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
 
-      PetscBool bnd_cell_order_flipped = PETSC_FALSE;
-
-      if (is_edge_vertical) {
-        if (cells->centroids[l].X[1] > edges->centroids[iedge].X[1]) bnd_cell_order_flipped = PETSC_TRUE;
-      } else {
-        if (cells->centroids[l].X[0] > edges->centroids[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
-      }
-
       if (cells->is_local[l] && b_ptr[l] == 0) {
         hr_vec_bnd[ii] = hl_vec_bnd[ii];
-        if (is_edge_vertical) {
-          ur_vec_bnd[ii] = ul_vec_bnd[ii];
-          vr_vec_bnd[ii] = -vl_vec_bnd[ii];
-        } else {
-          ur_vec_bnd[ii] = -ul_vec_bnd[ii];
-          vr_vec_bnd[ii] = vl_vec_bnd[ii];
-        }
 
-        if (bnd_cell_order_flipped) {
-          PetscReal tmp;
+        PetscReal dum1 = Square(sn_vec_bnd[ii]) - Square(cn_vec_bnd[ii]);
+        PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
 
-          tmp            = hl_vec_bnd[ii];
-          hl_vec_bnd[ii] = hr_vec_bnd[ii];
-          hr_vec_bnd[ii] = tmp;
-
-          tmp            = ul_vec_bnd[ii];
-          ul_vec_bnd[ii] = ur_vec_bnd[ii];
-          ur_vec_bnd[ii] = tmp;
-
-          tmp            = vl_vec_bnd[ii];
-          vl_vec_bnd[ii] = vr_vec_bnd[ii];
-          vr_vec_bnd[ii] = tmp;
-        }
+        ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
+        vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
       }
     }
   }
@@ -1551,37 +1727,15 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     PetscReal edgeLen    = edges->lengths[iedge];
     PetscReal areal      = cells->areas[l];
 
-    PetscBool is_edge_vertical;
-    if (PetscAbs(edges->normals[iedge].V[0]) < 1.e-10) {
-      is_edge_vertical = PETSC_TRUE;
-    } else if (PetscAbs(edges->normals[iedge].V[1]) < 1.e-10) {
-      is_edge_vertical = PETSC_FALSE;
-    } else {
-      printf("The code only support quad cells with edges that align with x and y axis\n");
-      exit(0);
-    }
-
     if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
-
-      PetscBool bnd_cell_order_flipped = PETSC_FALSE;
-
-      if (is_edge_vertical) {
-        if (cells->centroids[l].X[1] > edges->centroids[iedge].X[1]) bnd_cell_order_flipped = PETSC_TRUE;
-      } else {
-        if (cells->centroids[l].X[0] > edges->centroids[iedge].X[0]) bnd_cell_order_flipped = PETSC_TRUE;
-      }
 
       PetscReal hl = x_ptr[l * ndof + 0];
 
       if (!(hl < app->tiny_h)) {
         *amax_value = fmax(*amax_value, amax_vec_bnd[ii]);
         for (PetscInt idof = 0; idof < ndof; idof++) {
-          if (!bnd_cell_order_flipped) {
-            f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
-          } else {
-            f_ptr[l * ndof + idof] += flux_vec_bnd[ii][idof] * edgeLen / areal;
-          }
+          f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
         }
       }
     }
@@ -1591,6 +1745,88 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
   PetscCall(VecRestoreArray(app->localX, &x_ptr));
   PetscCall(VecRestoreArray(F, &f_ptr));
   PetscCall(VecRestoreArray(app->localB, &b_ptr));
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief Add contribution of the source term of SWE
+/// @param [in] app A RDyApp struct
+/// @param [inout] F A global flux Vec
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
+  PetscFunctionBeginUser;
+
+  RDyMesh  *mesh  = &app->mesh;
+  RDyCells *cells = &mesh->cells;
+
+  // Get access to Vec
+  PetscScalar *x_ptr, *f_ptr;
+  PetscCall(VecGetArray(app->localX, &x_ptr));
+  PetscCall(VecGetArray(F, &f_ptr));
+
+  PetscInt ndof = app->ndof;
+
+  PetscInt  num = mesh->num_cells;
+  PetscReal h_vec[num], hu_vec[num], hv_vec[num], u_vec[num], v_vec[num];
+
+  // Collect the h/hu/hv for cells to compute u/v
+  for (PetscInt icell = 0; icell < mesh->num_cells; icell++) {
+    h_vec[icell]  = x_ptr[icell * ndof + 0];
+    hu_vec[icell] = x_ptr[icell * ndof + 1];
+    hv_vec[icell] = x_ptr[icell * ndof + 2];
+  }
+
+  // Compute u/v for cells
+  PetscCall(GetVelocityFromMomentum(num, app->tiny_h, h_vec, hu_vec, hv_vec, u_vec, v_vec));
+
+  for (PetscInt icell = 0; icell < mesh->num_cells; icell++) {
+    if (cells->is_local[icell]) {
+      PetscReal h  = h_vec[icell];
+      PetscReal hu = hu_vec[icell];
+      PetscReal hv = hv_vec[icell];
+
+      PetscReal dz_dx = cells->dz_dx[icell];
+      PetscReal dz_dy = cells->dz_dy[icell];
+
+      PetscReal bedx = dz_dx * GRAVITY * h;
+      PetscReal bedy = dz_dy * GRAVITY * h;
+
+      PetscReal u = u_vec[icell];
+      PetscReal v = u_vec[icell];
+
+      PetscReal Fsum_x = f_ptr[icell * ndof + 1];
+      PetscReal Fsum_y = f_ptr[icell * ndof + 2];
+
+      PetscReal tbx = 0.0, tby = 0.0;
+
+      if (h >= app->tiny_h) {
+        // Manning's coefficient
+        PetscReal Uniform_roughness = 0.015;
+        PetscReal N_mannings        = GRAVITY * Uniform_roughness * Uniform_roughness;
+
+        // Cd = g n^2 h^{-1/3}, where n is Manning's coefficient
+        PetscReal Cd = GRAVITY * Square(N_mannings) * PetscPowReal(h, -1.0 / 3.0);
+
+        PetscReal velocity = PetscSqrtReal(Square(u) + Square(v));
+
+        PetscReal tb = Cd * velocity / h;
+
+        PetscReal dt     = app->dt;
+        PetscReal factor = tb / (1.0 + dt * tb);
+
+        tbx = (hu + dt * Fsum_x - dt * bedx) * factor;
+        tby = (hv + dt * Fsum_y - dt * bedy) * factor;
+      }
+
+      f_ptr[icell * ndof + 0] += 0.0;
+      f_ptr[icell * ndof + 1] += -bedx - tbx;
+      f_ptr[icell * ndof + 2] += -bedy - tby;
+    }
+  }
+
+  // Restore vectors
+  PetscCall(VecRestoreArray(app->localX, &x_ptr));
+  PetscCall(VecRestoreArray(F, &f_ptr));
 
   PetscFunctionReturn(0);
 }
@@ -1617,6 +1853,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscReal amax_value = 0.0;
   PetscCall(RHSFunctionForInternalEdges(app, F, &amax_value));
   PetscCall(RHSFunctionForBoundaryEdges(app, F, &amax_value));
+  PetscCall(AddSourceTerm(app, F));
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
