@@ -737,7 +737,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
       edges->vertex_ids[v_offset + 0] = vid_2;
       edges->vertex_ids[v_offset + 1] = vid_1;
       for (PetscInt idim = 0; idim < 3; idim++) {
-        edges->normals[iedge].V[idim] = -edges->normals[iedge].V[idim];
+        edges->normals[iedge].V[idim] *= -1.0;
       }
     }
 
@@ -751,7 +751,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
 
     PetscReal dx = x2 - x1;
     PetscReal dy = y2 - y1;
-    PetscReal ds = PetscSqrtReal(PetscPowReal(dx, 2.0) + PetscPowReal(dy, 2.0));
+    PetscReal ds = PetscSqrtReal(dx * dx + dy * dy);
 
     edges->sn[iedge] = -dx / ds;
     edges->cn[iedge] = dy / ds;
@@ -814,8 +814,7 @@ PetscBool AreVerticesOrientedCounterClockwise(PetscReal xyz0[3], PetscReal xyz1[
 /// @param [out] *dz_dx Slope in x-direction
 /// @param [out] dz_dy Slope in y-direction
 /// @return 0 on success, or a non-zero error code on failure
-static PetscErrorCode ComputeSlopeInXAndYForATriangleCell(PetscReal xyz0[3], PetscReal xyz1[3], PetscReal xyz2[3], PetscReal *dz_dx,
-                                                          PetscReal *dz_dy) {
+static PetscErrorCode ComputeXYSlopesForTriangle(PetscReal xyz0[3], PetscReal xyz1[3], PetscReal xyz2[3], PetscReal *dz_dx, PetscReal *dz_dy) {
   PetscFunctionBegin;
 
   PetscReal x0, y0, z0;
@@ -872,8 +871,8 @@ PetscErrorCode RDyComputeAdditionalCellAttributes(RDyMesh *mesh) {
       PetscInt v1     = cells->vertex_ids[offset + 1];
       PetscInt v2     = cells->vertex_ids[offset + 2];
 
-      PetscCall(ComputeSlopeInXAndYForATriangleCell(vertices->points[v0].X, vertices->points[v1].X, vertices->points[v2].X, &cells->dz_dx[icell],
-                                                    &cells->dz_dy[icell]));
+      PetscCall(ComputeXYSlopesForTriangle(vertices->points[v0].X, vertices->points[v1].X, vertices->points[v2].X, &cells->dz_dx[icell],
+                                           &cells->dz_dy[icell]));
 
     } else if (nverts == 4) {
       PetscInt offset = cells->vertex_offsets[icell];
@@ -900,7 +899,7 @@ PetscErrorCode RDyComputeAdditionalCellAttributes(RDyMesh *mesh) {
         PetscInt a = vertexIDs[ii][0];
         PetscInt b = vertexIDs[ii][1];
 
-        PetscCall(ComputeSlopeInXAndYForATriangleCell(vertices->points[a].X, vertices->points[b].X, cells->centroids[icell].X, &dz_dx, &dz_dy));
+        PetscCall(ComputeXYSlopesForTriangle(vertices->points[a].X, vertices->points[b].X, cells->centroids[icell].X, &dz_dx, &dz_dy));
         cells->dz_dx[icell] += 0.5 * dz_dx;
         cells->dz_dy[icell] += 0.5 * dz_dy;
       }
@@ -1578,7 +1577,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       // Update left values as it is a reflective boundary wall
       hl_vec_int[ii] = hr_vec_int[ii];
 
-      PetscReal dum1 = PetscPowReal(sn_vec_int[ii], 2.0) - PetscPowReal(cn_vec_int[ii], 2.0);
+      PetscReal dum1 = sn_vec_int[ii] * sn_vec_int[ii] - cn_vec_int[ii] * cn_vec_int[ii];
       PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
 
       ul_vec_int[ii] = ur_vec_int[ii] * dum1 - vr_vec_int[ii] * dum2;
@@ -1588,7 +1587,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       // Update right values as it is a reflective boundary wall
       hr_vec_int[ii] = hl_vec_int[ii];
 
-      PetscReal dum1 = PetscPowReal(sn_vec_int[ii], 2.0) - PetscPowReal(cn_vec_int[ii], 2.0);
+      PetscReal dum1 = sn_vec_int[ii] * sn_vec_int[ii] - cn_vec_int[ii] * cn_vec_int[ii];
       PetscReal dum2 = 2.0 * sn_vec_int[ii] * cn_vec_int[ii];
 
       ur_vec_int[ii] = ul_vec_int[ii] * dum1 - vl_vec_int[ii] * dum2;
@@ -1705,7 +1704,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
       if (cells->is_local[l] && b_ptr[l] == 0) {
         hr_vec_bnd[ii] = hl_vec_bnd[ii];
 
-        PetscReal dum1 = PetscPowReal(sn_vec_bnd[ii], 2.0) - PetscPowReal(cn_vec_bnd[ii], 2.0);
+        PetscReal dum1 = sn_vec_bnd[ii] * sn_vec_bnd[ii] - cn_vec_bnd[ii] * cn_vec_bnd[ii];
         PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
 
         ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
@@ -1800,12 +1799,12 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
       if (h >= app->tiny_h) {
         // Manning's coefficient
         PetscReal Uniform_roughness = 0.015;
-        PetscReal N_mannings        = GRAVITY * PetscPowReal(Uniform_roughness, 2.0);
+        PetscReal N_mannings        = GRAVITY * Uniform_roughness * Uniform_roughness;
 
         // Cd = g n^2 h^{-1/3}, where n is Manning's coefficient
-        PetscReal Cd = GRAVITY * PetscPowReal(N_mannings, 2.0) * PetscPowReal(h, -1.0 / 3.0);
+        PetscReal Cd = GRAVITY * N_mannings * N_mannings * PetscPowReal(h, -1.0 / 3.0);
 
-        PetscReal velocity = PetscSqrtReal(PetscPowReal(u, 2.0) + PetscPowReal(v, 2.0));
+        PetscReal velocity = PetscSqrtReal(u * u + v * v);
 
         PetscReal tb = Cd * velocity / h;
 
