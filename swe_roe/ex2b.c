@@ -628,7 +628,7 @@ typedef struct RDyMesh {
 /// @param b A RDyVector b
 /// @param c A RDyVector c
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode VecCrossProduct(RDyVector a, RDyVector b, RDyVector *c) {
+PetscErrorCode CrossProduct(RDyVector a, RDyVector b, RDyVector *c) {
   PetscFunctionBegin;
 
   c->V[0] = (a.V[1] * b.V[2] - a.V[2] * b.V[1]);
