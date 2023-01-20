@@ -897,6 +897,7 @@ PetscErrorCode RDyComputeAdditionalCellAttributes(RDyMesh *mesh) {
       cells->dz_dx[icell] = 0.0;
       cells->dz_dy[icell] = 0.0;
 
+      // TODO: Revisit the approach to compute dz/dx and dz/y for quad cells.
       for (PetscInt ii = 0; ii < 4; ii++) {
         PetscInt a = vertexIDs[ii][0];
         PetscInt b = vertexIDs[ii][1];
