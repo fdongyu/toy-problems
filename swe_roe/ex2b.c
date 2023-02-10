@@ -1139,7 +1139,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", app->save, &app->save, NULL));
     PetscCall(PetscOptionsString("-mesh_filename", "The mesh file", "ex2.c", app->filename, app->filename, PETSC_MAX_PATH_LEN, NULL));
-    PetscCall(PetscOptionsString("-initial_condition_filename", "The initial condition file", "ex2.c", app->initial_condition_filename, app->initial_condition_filename, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsString("-initial_condition_filename", "The initial condition file", "ex2.c", app->initial_condition_filename,
+                                 app->initial_condition_filename, PETSC_MAX_PATH_LEN, NULL));
   }
   PetscOptionsEnd();
 
@@ -1948,11 +1949,10 @@ int main(int argc, char **argv) {
   PetscStrlen(app->initial_condition_filename, &len);
   if (!len) {
     PetscCall(SetInitialCondition(app, X));
-  }
-  else {
+  } else {
     PetscCall(SetInitialConditionFromFile(app, X));
   }
-  
+
   {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_IC_np%d.dat", app->Nx, app->Ny, app->dt, app->comm_size);
