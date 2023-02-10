@@ -24,6 +24,7 @@ struct _n_User {
   PetscInt  gxs, gxm, gys, gym, gxe, gye;
   PetscBool debug, add_building;
   PetscInt  save, tstep;
+  PetscInt  domain; // domain = 0: create domain from Lx, Ly, dx, dy; domain > 0: predefined domain
 };
 
 extern PetscErrorCode RHSFunction(TS, PetscReal, Vec, Vec, void *);
@@ -68,14 +69,28 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
   user->gxe = user->gxs + user->gxm - 1;
   user->gye = user->gys + user->gym - 1;
 
+  PetscInt iDam = 95;
+  if (user->domain == 1) {
+    iDam = 4;
+  }
+  PetscPrintf(user->comm, "iDam = %d\n", iDam);
+
+  PetscScalar ***b_ptr;
+  PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
+
   // Set higher water on the left of the dam
   PetscCall(VecZeroEntries(X));
   for (PetscInt j = ys; j < ys + ym; j = j + 1) {
     for (PetscInt i = xs; i < xs + xm; i = i + 1) {
-      if (j < 95 / user->dy) {
+      if (i < iDam / user->dx) {
         x_ptr[j][i][0] = user->hu;
       } else {
-        x_ptr[j][i][0] = user->hd;
+        if (b_ptr[j][i][0] == 1.) {
+          x_ptr[j][i][0] = 0.;
+        } else {
+          x_ptr[j][i][0] = user->hd;
+        }
+        
       }
     }
   }
@@ -84,6 +99,7 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
   PetscCall(VecZeroEntries(user->G));
 
   // Restore vectors
+  PetscCall(DMDAVecRestoreArrayDOF(da, user->B, &b_ptr));
   PetscCall(DMDAVecRestoreArrayDOF(da, X, &x_ptr));
 
   PetscPrintf(user->comm, "Initialization sucesses!\n");
@@ -94,12 +110,50 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
 PetscErrorCode Add_Buildings(User user) {
   PetscFunctionBeginUser;
 
-  DM       da = user->da;
-  PetscInt bu = 30 / user->dx;
-  PetscInt bd = 105 / user->dx;
-  PetscInt bl = 95 / user->dy;
-  PetscInt br = 105 / user->dy;
+  PetscCall(PetscPrintf(user->comm, "Assiging buildings!\n"));
 
+  DM        da    = user->da;
+  PetscBool debug = user->debug;
+
+   // Get local grid boundaries
+  PetscInt xs, ys, xm, ym;
+  PetscCall(DMDAGetCorners(da, &xs, &ys, 0, &xm, &ym, 0));
+
+  PetscInt gxs, gys, gxm, gym;
+  PetscCall(DMDAGetGhostCorners(da, &gxs, &gys, 0, &gxm, &gym, 0));
+  if (debug) {
+    MPI_Comm self;
+    self = PETSC_COMM_SELF;
+    PetscPrintf(self, "rank = %d, xs = %d, ys = %d, xm = %d, ym = %d\n", user->rank, xs, ys, xm, ym);
+    PetscPrintf(self, "rank = %d, gxs = %d, gys = %d, gxm = %d, gym = %d\n", user->rank, gxs, gys, gxm, gym);
+  }
+
+  user->xs = xs;
+  user->ys = ys;
+  user->xm = xm;
+  user->ym = ym;
+
+  user->gxs = gxs;
+  user->gys = gys;
+  user->gxm = gxm;
+  user->gym = gym;
+  
+  PetscInt bu;
+  PetscInt bd;
+  PetscInt bl;
+  PetscInt br;
+  if (user->domain == 0) {
+    bu = 30 / user->dx;
+    bd = 105 / user->dx;
+    bl = 95 / user->dy;
+    br = 105 / user->dy;
+  } else if (user->domain == 1) {
+    bu = 2;
+    bd = 4;
+    bl = 4;
+    br = 6;
+  }
+  
   PetscScalar ***b_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
 
@@ -123,12 +177,18 @@ PetscErrorCode Add_Buildings(User user) {
   x x x x x x x x x x x
 
   */
+
+  PetscCall(PetscPrintf(user->comm, "ys=%d,ym=%d,xs=%d,xm=%d\n", user->ys, user->ym, user->xs, user->xm));
+
   for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
     for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
-      if (i < bu && j >= bl && j < br) {
+      PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d\n", i,j);
+      if (j < bu && i >= bl && i < br) {
         b_ptr[j][i][0] = 1.;
-      } else if (i >= bd && j >= bl && j < br) {
+        PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d is inactive\n", i,j);
+      } else if (j >= bd && i >= bl && i < br) {
         b_ptr[j][i][0] = 1.;
+        PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d is inactive\n", i,j);
       }
     }
   }
@@ -571,6 +631,7 @@ int main(int argc, char **argv) {
   user->hu     = 10.0;  // water depth for the upstream of dam   [m]
   user->hd     = 5.0;   // water depth for the downstream of dam [m]
   user->tiny_h = 1e-7;
+  user->domain = 0;     
 
   PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   {
@@ -585,13 +646,29 @@ int main(int argc, char **argv) {
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", user->add_building, &user->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", user->debug, &user->debug, NULL));
     PetscCall(PetscOptionsInt("-save", "save outputs", "", user->save, &user->save, NULL));
+    PetscCall(PetscOptionsInt("-domain", "domain options", "", user->domain, &user->domain, NULL));
   }
   PetscOptionsEnd();
   assert(user->hu >= 0.);
   assert(user->hd >= 0.);
 
-  user->Nx = user->Lx / user->dx;
-  user->Ny = user->Ly / user->dy;
+  PetscPrintf(user->comm, "Using domain option = %d; \n", user->domain);
+
+  if (user->domain == 0) {
+    user->Nx = user->Lx / user->dx;
+    user->Ny = user->Ly / user->dy;
+  } else if (user->domain == 1) {
+    user->Lx = 10; // [m]
+    user->Ly = 5;  // [m]
+    user->dx = 1;  // [m]
+    user->dy = 1;  // [m]
+    user->Nx = user->Lx / user->dx;
+    user->Ny = user->Ly / user->dy;
+  }
+  else {
+    exit(0);
+  }
+  
   user->Nt = user->max_time / user->dt;
   PetscPrintf(user->comm, "Max simulation time is %f; \n", user->max_time);
 
@@ -641,6 +718,13 @@ int main(int argc, char **argv) {
   PetscCall(VecDuplicate(X, &R));
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
+   *  Add buildings
+   * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+  if (user->add_building) {
+    PetscCall(Add_Buildings(user));
+  }
+
+  /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Initial Condition
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   SetInitialCondition(X, user);
@@ -654,13 +738,6 @@ int main(int argc, char **argv) {
       PetscCall(VecView(X, viewer));
       PetscCall(PetscViewerDestroy(&viewer));
     }
-  }
-
-  /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
-   *  Add buildings
-   * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-  if (user->add_building) {
-    PetscCall(Add_Buildings(user));
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
