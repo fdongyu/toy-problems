@@ -24,7 +24,7 @@ struct _n_User {
   PetscInt  gxs, gxm, gys, gym, gxe, gye;
   PetscBool debug, add_building;
   PetscInt  save, tstep;
-  PetscInt  domain; // domain = 0: create domain from Lx, Ly, dx, dy; domain > 0: predefined domain
+  PetscInt  domain;  // domain = 0: create domain from Lx, Ly, dx, dy; domain > 0: predefined domain
 };
 
 extern PetscErrorCode RHSFunction(TS, PetscReal, Vec, Vec, void *);
@@ -90,7 +90,6 @@ static PetscErrorCode SetInitialCondition(Vec X, User user) {
         } else {
           x_ptr[j][i][0] = user->hd;
         }
-        
       }
     }
   }
@@ -115,7 +114,7 @@ PetscErrorCode Add_Buildings(User user) {
   DM        da    = user->da;
   PetscBool debug = user->debug;
 
-   // Get local grid boundaries
+  // Get local grid boundaries
   PetscInt xs, ys, xm, ym;
   PetscCall(DMDAGetCorners(da, &xs, &ys, 0, &xm, &ym, 0));
 
@@ -137,7 +136,7 @@ PetscErrorCode Add_Buildings(User user) {
   user->gys = gys;
   user->gxm = gxm;
   user->gym = gym;
-  
+
   PetscInt bu;
   PetscInt bd;
   PetscInt bl;
@@ -153,7 +152,7 @@ PetscErrorCode Add_Buildings(User user) {
     bl = 4;
     br = 6;
   }
-  
+
   PetscScalar ***b_ptr;
   PetscCall(DMDAVecGetArrayDOF(da, user->B, &b_ptr));
 
@@ -182,13 +181,13 @@ PetscErrorCode Add_Buildings(User user) {
 
   for (PetscInt j = user->ys; j < user->ys + user->ym; j = j + 1) {
     for (PetscInt i = user->xs; i < user->xs + user->xm; i = i + 1) {
-      PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d\n", i,j);
+      PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d\n", i, j);
       if (j < bu && i >= bl && i < br) {
         b_ptr[j][i][0] = 1.;
-        PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d is inactive\n", i,j);
+        PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d is inactive\n", i, j);
       } else if (j >= bd && i >= bl && i < br) {
         b_ptr[j][i][0] = 1.;
-        PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d is inactive\n", i,j);
+        PetscPrintf(PETSC_COMM_SELF, "i = %d, j = %d is inactive\n", i, j);
       }
     }
   }
@@ -631,7 +630,7 @@ int main(int argc, char **argv) {
   user->hu     = 10.0;  // water depth for the upstream of dam   [m]
   user->hd     = 5.0;   // water depth for the downstream of dam [m]
   user->tiny_h = 1e-7;
-  user->domain = 0;     
+  user->domain = 0;
 
   PetscOptionsBegin(user->comm, NULL, "2D Mesh Options", "");
   {
@@ -658,17 +657,16 @@ int main(int argc, char **argv) {
     user->Nx = user->Lx / user->dx;
     user->Ny = user->Ly / user->dy;
   } else if (user->domain == 1) {
-    user->Lx = 10; // [m]
-    user->Ly = 5;  // [m]
-    user->dx = 1;  // [m]
-    user->dy = 1;  // [m]
+    user->Lx = 10;  // [m]
+    user->Ly = 5;   // [m]
+    user->dx = 1;   // [m]
+    user->dy = 1;   // [m]
     user->Nx = user->Lx / user->dx;
     user->Ny = user->Ly / user->dy;
-  }
-  else {
+  } else {
     exit(0);
   }
-  
+
   user->Nt = user->max_time / user->dt;
   PetscPrintf(user->comm, "Max simulation time is %f; \n", user->max_time);
 
