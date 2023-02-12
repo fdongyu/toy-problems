@@ -911,7 +911,7 @@ static PetscErrorCode CreateDM(RDyApp app) {
     PetscReal lower[] = {0.0, 0.0};
     PetscReal upper[] = {app->Lx, app->Ly};
 
-    PetscCall(DMPlexCreateBoxMesh(app->comm, dim, PETSC_FALSE, faces, lower, upper, PETSC_NULL, PETSC_TRUE, &app->dm));
+    PetscCall(DMPlexCreateBoxMesh(app->comm, dim, PETSC_FALSE, faces, lower, upper, PETSC_NULLPTR, PETSC_TRUE, &app->dm));
   } else {
     DMPlexCreateFromFile(app->comm, app->filename, "ex2.c", PETSC_FALSE, &app->dm);
   }
