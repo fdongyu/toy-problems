@@ -9,7 +9,7 @@ jobs:
   # This job builds RDycore and runs our test suite.
   build:
     runs-on: ${{ matrix.os }}
-    container: coherellc/rdycore-petsc:v3.18.1
+    container: coherellc/rdycore-petsc:v3.18.4
 
     # A build matrix storing all desired configurations.
     strategy:
@@ -30,9 +30,11 @@ jobs:
         cd swe_roe
         make ex1
         ./ex1 -hd 5.0 -save 2 -b -dx 10 -dy 10 -dt 0.01 -ts_max_time 0.1
+	mpiexec -n 3 ./ex1 -domain 1 -dt 0.01 -t 1.0
         make ex2a
         ./ex2a -dm_view -save -b  -hu 10.0 -hd 5.0 -save -dt 0.01 -ts_monitor -Nx 200 -Ny 200  -b -ts_max_time 0.1
         mpiexec -n 3 ./ex2a -dm_view -save -b  -hu 10.0 -hd 5.0 -save -dt 0.01 -ts_monitor -Nx 200 -Ny 200  -b -ts_max_time 0.1
         make ex2b
         mpiexec -n 3 ./ex2b -dm_view -save -b  -hu 10.0 -hd 5.0 -save -dt 0.01 -ts_monitor -Nx 200 -Ny 200  -b -ts_max_time 0.1
+        mpiexec -n 3 ./ex2b -mesh_filenmae ../share/meshes/DamBreak_grid5x10.exo -initial_condition_filename ../share/initial_conditions/DamBreak_grid5x10_wetdownstream.IC -dt 0.01 -ts_max_time 1.0
 
