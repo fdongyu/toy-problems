@@ -880,7 +880,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", app->add_building, &app->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", app->save, &app->save, NULL));
-    PetscCall(PetscOptionsString("-mesh_filename", "The mesh file", "ex2.c", app->filename, app->filename, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsString("-mesh", "The mesh file", "ex2.c", app->filename, app->filename, PETSC_MAX_PATH_LEN, NULL));
   }
   PetscOptionsEnd();
 
@@ -911,7 +911,7 @@ static PetscErrorCode CreateDM(RDyApp app) {
     PetscReal lower[] = {0.0, 0.0};
     PetscReal upper[] = {app->Lx, app->Ly};
 
-    PetscCall(DMPlexCreateBoxMesh(app->comm, dim, PETSC_FALSE, faces, lower, upper, PETSC_NULL, PETSC_TRUE, &app->dm));
+    PetscCall(DMPlexCreateBoxMesh(app->comm, dim, PETSC_FALSE, faces, lower, upper, PETSC_NULLPTR, PETSC_TRUE, &app->dm));
   } else {
     DMPlexCreateFromFile(app->comm, app->filename, "ex2.c", PETSC_FALSE, &app->dm);
   }
