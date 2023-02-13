@@ -1052,10 +1052,10 @@ struct _n_RDyApp {
   PetscInt rank;
   /// Number of processes in the communicator
   PetscInt comm_size;
-  /// filename storing input data for the simulation
-  char filename[PETSC_MAX_PATH_LEN];
+  /// filename of the mesh for the simulation
+  char mesh_file[PETSC_MAX_PATH_LEN];
   /// filename storing initial condition for the simulation
-  char initial_condition_filename[PETSC_MAX_PATH_LEN];
+  char initial_condition_file[PETSC_MAX_PATH_LEN];
   /// PETSc grid
   DM dm;
   /// A DM for creating PETSc Vecs with 1 DOF
@@ -1138,9 +1138,9 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", app->add_building, &app->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", app->save, &app->save, NULL));
-    PetscCall(PetscOptionsString("-mesh_filename", "The mesh file", "ex2.c", app->filename, app->filename, PETSC_MAX_PATH_LEN, NULL));
-    PetscCall(PetscOptionsString("-initial_condition_filename", "The initial condition file", "ex2.c", app->initial_condition_filename,
-                                 app->initial_condition_filename, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsString("-mesh", "The mesh file", "ex2.c", app->mesh_file, app->mesh_file, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsString("-initial_condition", "The initial condition file", "ex2.c", app->initial_condition_file,
+                                 app->initial_condition_file, PETSC_MAX_PATH_LEN, NULL));
   }
   PetscOptionsEnd();
 
@@ -1164,7 +1164,7 @@ static PetscErrorCode CreateDM(RDyApp app) {
 
   size_t len;
 
-  PetscStrlen(app->filename, &len);
+  PetscStrlen(app->mesh_file, &len);
   if (!len) {
     PetscInt  dim     = 2;
     PetscInt  faces[] = {app->Nx, app->Ny};
@@ -1173,7 +1173,7 @@ static PetscErrorCode CreateDM(RDyApp app) {
 
     PetscCall(DMPlexCreateBoxMesh(app->comm, dim, PETSC_FALSE, faces, lower, upper, PETSC_NULLPTR, PETSC_TRUE, &app->dm));
   } else {
-    DMPlexCreateFromFile(app->comm, app->filename, "ex2.c", PETSC_FALSE, &app->dm);
+    DMPlexCreateFromFile(app->comm, app->mesh_file, "ex2.c", PETSC_FALSE, &app->dm);
   }
 
   DM dmInterp;
@@ -1324,7 +1324,7 @@ static PetscErrorCode SetInitialConditionFromFile(RDyApp app, Vec X) {
   PetscCall(VecZeroEntries(X));
 
   PetscViewer viewer;
-  PetscCall(PetscViewerBinaryOpen(app->comm, app->initial_condition_filename, FILE_MODE_READ, &viewer));
+  PetscCall(PetscViewerBinaryOpen(app->comm, app->initial_condition_file, FILE_MODE_READ, &viewer));
   Vec natural;
   PetscCall(DMPlexCreateNaturalVector(app->dm, &natural));
   PetscCall(VecLoad(natural, viewer));
@@ -1946,7 +1946,7 @@ int main(int argc, char **argv) {
   PetscCall(PetscPrintf(PETSC_COMM_WORLD, "3. SetInitialCondition\n"));
   size_t len;
 
-  PetscStrlen(app->initial_condition_filename, &len);
+  PetscStrlen(app->initial_condition_file, &len);
   if (!len) {
     PetscCall(SetInitialCondition(app, X));
   } else {

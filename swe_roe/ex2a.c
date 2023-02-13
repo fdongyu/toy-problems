@@ -880,7 +880,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", app->add_building, &app->add_building, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", app->save, &app->save, NULL));
-    PetscCall(PetscOptionsString("-mesh_filename", "The mesh file", "ex2.c", app->filename, app->filename, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsString("-mesh", "The mesh file", "ex2.c", app->filename, app->filename, PETSC_MAX_PATH_LEN, NULL));
   }
   PetscOptionsEnd();
 
