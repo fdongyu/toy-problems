@@ -1669,11 +1669,9 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
         for (PetscInt idof = 0; idof < ndof; idof++) {
           if (cells->is_local[l]) {
             f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
-            //if (idof == 0) printf("f_ptr [L] = %+19.18f; %+19.18f, %+19.18f, %+19.18f\n\n",flux_vec_int[ii][idof] * edgeLen / areal,flux_vec_int[ii][idof],edgeLen, areal);
           }
           if (cells->is_local[r]) {
             f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
-            //if (idof == 0) printf("f_ptr [R] = %+19.18f; %+19.18f, %+19.18f, %+19.18f\n\n",flux_vec_int[ii][idof] * edgeLen / arear,flux_vec_int[ii][idof],edgeLen, arear);
           }
         }
       }
