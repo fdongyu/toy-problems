@@ -1086,6 +1086,8 @@ struct _n_RDyApp {
   PetscReal dt;
   /// index of current timestep
   PetscInt tstep;
+  /// Manning's roughness coefficient
+  PetscReal mannings_n;
 
   PetscInt  ndof;
   Vec       B, localB;
@@ -1123,6 +1125,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   app->hd     = 5.0;   // water depth for the downstream of dam [m]
   app->tiny_h = 1e-7;
   app->ndof   = 3;
+  app->mannings_n = 0.015;
 
   MPI_Comm_size(app->comm, &app->comm_size);
   MPI_Comm_rank(app->comm, &app->rank);
@@ -1144,6 +1147,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsString("-initial_condition", "The initial condition file", "ex2.c", app->initial_condition_file,
                                  app->initial_condition_file, PETSC_MAX_PATH_LEN, NULL));
     PetscCall(PetscOptionsString("-output_prefix", "Output prefix", "ex2.c", app->output_prefix, app->output_prefix, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsReal("-mannings_n", "mannings_n", "", app->mannings_n, &app->mannings_n, NULL));
   }
   PetscOptionsEnd();
 
@@ -1855,12 +1859,8 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
       PetscReal tbx = 0.0, tby = 0.0;
 
       if (h >= app->tiny_h) {
-        // Manning's coefficient
-        PetscReal Uniform_roughness = 0.015;
-        PetscReal N_mannings        = Uniform_roughness;
-
         // Cd = g n^2 h^{-1/3}, where n is Manning's coefficient
-        PetscReal Cd = GRAVITY * Square(N_mannings) * PetscPowReal(h, -1.0 / 3.0);
+        PetscReal Cd = GRAVITY * Square(app->mannings_n) * PetscPowReal(h, -1.0 / 3.0);
 
         PetscReal velocity = PetscSqrtReal(Square(u) + Square(v));
 
