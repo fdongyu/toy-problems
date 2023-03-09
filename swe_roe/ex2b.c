@@ -1116,15 +1116,15 @@ PetscErrorCode RDyAllocate_IntegerArray_1D(PetscInt **array_1D, PetscInt ndim_1)
 static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   PetscFunctionBegin;
 
-  app->comm   = comm;
-  app->Nx     = 4;
-  app->Ny     = 5;
-  app->dx     = 1.0;
-  app->dy     = 1.0;
-  app->hu     = 10.0;  // water depth for the upstream of dam   [m]
-  app->hd     = 5.0;   // water depth for the downstream of dam [m]
-  app->tiny_h = 1e-7;
-  app->ndof   = 3;
+  app->comm       = comm;
+  app->Nx         = 4;
+  app->Ny         = 5;
+  app->dx         = 1.0;
+  app->dy         = 1.0;
+  app->hu         = 10.0;  // water depth for the upstream of dam   [m]
+  app->hd         = 5.0;   // water depth for the downstream of dam [m]
+  app->tiny_h     = 1e-7;
+  app->ndof       = 3;
   app->mannings_n = 0.015;
 
   MPI_Comm_size(app->comm, &app->comm_size);
@@ -1710,6 +1710,8 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
 /// @brief It computes RHSFunction for boundary edges
 /// @param [inout] app A RDyApp struct
 /// @param [inout] F A global flux Vec
+/// @param [out] *amax_value
+/// @param [out] *crmax_value Courant number
 /// @return 0 on success, or a non-zero error code on failure
 PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_value, PetscReal *crmax_value) {
   PetscFunctionBeginUser;
