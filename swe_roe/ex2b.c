@@ -1667,16 +1667,12 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
         PetscReal areal = cells->areas[l];
         PetscReal arear = cells->areas[r];
 
-        *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / areal);
-        *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / arear);
+        *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / areal * app->dt);
+        *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / arear * app->dt);
 
         for (PetscInt idof = 0; idof < ndof; idof++) {
-          if (cells->is_local[l]) {
-            f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
-          }
-          if (cells->is_local[r]) {
-            f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
-          }
+          if (cells->is_local[l]) f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
+          if (cells->is_local[r]) f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
         }
       }
 
@@ -1684,7 +1680,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       // Left cell is a reflective boundary wall and right cell is an internal cell
       PetscReal arear = cells->areas[r];
 
-      *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / arear);
+      *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / arear * app->dt);
 
       for (PetscInt idof = 0; idof < ndof; idof++) {
         if (cells->is_local[r]) f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
@@ -1695,7 +1691,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
 
       PetscReal areal = cells->areas[l];
 
-      *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / areal);
+      *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / areal * app->dt);
 
       for (PetscInt idof = 0; idof < ndof; idof++) {
         if (cells->is_local[l]) f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
@@ -1791,7 +1787,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
 
       if (!(hl < app->tiny_h)) {
         *amax_value  = fmax(*amax_value, amax_vec_bnd[ii]);
-        *crmax_value = fmax(*crmax_value, amax_vec_bnd[ii] * edgeLen / areal);
+        *crmax_value = fmax(*crmax_value, amax_vec_bnd[ii] * edgeLen / areal * app->dt);
 
         for (PetscInt idof = 0; idof < ndof; idof++) {
           f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
@@ -1910,8 +1906,6 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(RHSFunctionForInternalEdges(app, F, &amax_value, &crmax_value));
   PetscCall(RHSFunctionForBoundaryEdges(app, F, &amax_value, &crmax_value));
   PetscCall(AddSourceTerm(app, F));
-
-  crmax_value *= app->dt;
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
