@@ -1054,6 +1054,8 @@ struct _n_RDyApp {
   PetscInt comm_size;
   /// filename of the mesh for the simulation
   char mesh_file[PETSC_MAX_PATH_LEN];
+  /// filename of the mesh for the simulation
+  char output_prefix[PETSC_MAX_PATH_LEN];
   /// filename storing initial condition for the simulation
   char initial_condition_file[PETSC_MAX_PATH_LEN];
   /// PETSc grid
@@ -1084,6 +1086,8 @@ struct _n_RDyApp {
   PetscReal dt;
   /// index of current timestep
   PetscInt tstep;
+  /// Manning's roughness coefficient
+  PetscReal mannings_n;
 
   PetscInt  ndof;
   Vec       B, localB;
@@ -1112,15 +1116,16 @@ PetscErrorCode RDyAllocate_IntegerArray_1D(PetscInt **array_1D, PetscInt ndim_1)
 static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   PetscFunctionBegin;
 
-  app->comm   = comm;
-  app->Nx     = 4;
-  app->Ny     = 5;
-  app->dx     = 1.0;
-  app->dy     = 1.0;
-  app->hu     = 10.0;  // water depth for the upstream of dam   [m]
-  app->hd     = 5.0;   // water depth for the downstream of dam [m]
-  app->tiny_h = 1e-7;
-  app->ndof   = 3;
+  app->comm       = comm;
+  app->Nx         = 4;
+  app->Ny         = 5;
+  app->dx         = 1.0;
+  app->dy         = 1.0;
+  app->hu         = 10.0;  // water depth for the upstream of dam   [m]
+  app->hd         = 5.0;   // water depth for the downstream of dam [m]
+  app->tiny_h     = 1e-7;
+  app->ndof       = 3;
+  app->mannings_n = 0.015;
 
   MPI_Comm_size(app->comm, &app->comm_size);
   MPI_Comm_rank(app->comm, &app->rank);
@@ -1141,6 +1146,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsString("-mesh", "The mesh file", "ex2.c", app->mesh_file, app->mesh_file, PETSC_MAX_PATH_LEN, NULL));
     PetscCall(PetscOptionsString("-initial_condition", "The initial condition file", "ex2.c", app->initial_condition_file,
                                  app->initial_condition_file, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsString("-output_prefix", "Output prefix", "ex2.c", app->output_prefix, app->output_prefix, PETSC_MAX_PATH_LEN, NULL));
+    PetscCall(PetscOptionsReal("-mannings_n", "mannings_n", "", app->mannings_n, &app->mannings_n, NULL));
   }
   PetscOptionsEnd();
 
@@ -1174,6 +1181,16 @@ static PetscErrorCode CreateDM(RDyApp app) {
     PetscCall(DMPlexCreateBoxMesh(app->comm, dim, PETSC_FALSE, faces, lower, upper, PETSC_NULLPTR, PETSC_TRUE, &app->dm));
   } else {
     DMPlexCreateFromFile(app->comm, app->mesh_file, "ex2.c", PETSC_FALSE, &app->dm);
+  }
+
+  PetscStrlen(app->output_prefix, &len);
+  if (!len) {
+    PetscStrlen(app->mesh_file, &len);
+    if (!len) {
+      sprintf(app->output_prefix, "ex2b_output");
+    } else {
+      sprintf(app->output_prefix, "ex2b_Nx_%d_Ny_%d", app->Nx, app->Ny);
+    }
   }
 
   DM dmInterp;
@@ -1550,7 +1567,9 @@ static PetscErrorCode GetVelocityFromMomentum(PetscInt N, PetscReal tiny_h, cons
 /// @brief It computes RHSFunction for internal edges
 /// @param [inout] app A RDyApp struct
 /// @param [inout] F A global flux Vec
-PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_value) {
+/// @param [out] *amax_value
+/// @param [out] *crmax_value Courant number
+PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_value, PetscReal *crmax_value) {
   PetscFunctionBeginUser;
 
   RDyMesh  *mesh  = &app->mesh;
@@ -1648,6 +1667,9 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
         PetscReal areal = cells->areas[l];
         PetscReal arear = cells->areas[r];
 
+        *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / areal * app->dt);
+        *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / arear * app->dt);
+
         for (PetscInt idof = 0; idof < ndof; idof++) {
           if (cells->is_local[l]) f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
           if (cells->is_local[r]) f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
@@ -1656,8 +1678,10 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
 
     } else if (bl == 1 && br == 0) {
       // Left cell is a reflective boundary wall and right cell is an internal cell
-
       PetscReal arear = cells->areas[r];
+
+      *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / arear * app->dt);
+
       for (PetscInt idof = 0; idof < ndof; idof++) {
         if (cells->is_local[r]) f_ptr[r * ndof + idof] += flux_vec_int[ii][idof] * edgeLen / arear;
       }
@@ -1666,6 +1690,9 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       // Left cell is an internal cell and right cell is a reflective boundary wall
 
       PetscReal areal = cells->areas[l];
+
+      *crmax_value = fmax(*crmax_value, amax_vec_int[ii] * edgeLen / areal * app->dt);
+
       for (PetscInt idof = 0; idof < ndof; idof++) {
         if (cells->is_local[l]) f_ptr[l * ndof + idof] -= flux_vec_int[ii][idof] * edgeLen / areal;
       }
@@ -1683,8 +1710,10 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
 /// @brief It computes RHSFunction for boundary edges
 /// @param [inout] app A RDyApp struct
 /// @param [inout] F A global flux Vec
+/// @param [out] *amax_value
+/// @param [out] *crmax_value Courant number
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_value) {
+PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_value, PetscReal *crmax_value) {
   PetscFunctionBeginUser;
 
   RDyMesh  *mesh  = &app->mesh;
@@ -1759,7 +1788,9 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
       PetscReal hl = x_ptr[l * ndof + 0];
 
       if (!(hl < app->tiny_h)) {
-        *amax_value = fmax(*amax_value, amax_vec_bnd[ii]);
+        *amax_value  = fmax(*amax_value, amax_vec_bnd[ii]);
+        *crmax_value = fmax(*crmax_value, amax_vec_bnd[ii] * edgeLen / areal * app->dt);
+
         for (PetscInt idof = 0; idof < ndof; idof++) {
           f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
         }
@@ -1818,7 +1849,7 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
       PetscReal bedy = dz_dy * GRAVITY * h;
 
       PetscReal u = u_vec[icell];
-      PetscReal v = u_vec[icell];
+      PetscReal v = v_vec[icell];
 
       PetscReal Fsum_x = f_ptr[icell * ndof + 1];
       PetscReal Fsum_y = f_ptr[icell * ndof + 2];
@@ -1826,12 +1857,8 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
       PetscReal tbx = 0.0, tby = 0.0;
 
       if (h >= app->tiny_h) {
-        // Manning's coefficient
-        PetscReal Uniform_roughness = 0.015;
-        PetscReal N_mannings        = GRAVITY * Uniform_roughness * Uniform_roughness;
-
         // Cd = g n^2 h^{-1/3}, where n is Manning's coefficient
-        PetscReal Cd = GRAVITY * Square(N_mannings) * PetscPowReal(h, -1.0 / 3.0);
+        PetscReal Cd = GRAVITY * Square(app->mannings_n) * PetscPowReal(h, -1.0 / 3.0);
 
         PetscReal velocity = PetscSqrtReal(Square(u) + Square(v));
 
@@ -1876,14 +1903,15 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(DMGlobalToLocalEnd(dm, X, INSERT_VALUES, app->localX));
   PetscCall(VecZeroEntries(F));
 
-  PetscReal amax_value = 0.0;
-  PetscCall(RHSFunctionForInternalEdges(app, F, &amax_value));
-  PetscCall(RHSFunctionForBoundaryEdges(app, F, &amax_value));
+  PetscReal amax_value  = 0.0;
+  PetscReal crmax_value = 0.0;
+  PetscCall(RHSFunctionForInternalEdges(app, F, &amax_value, &crmax_value));
+  PetscCall(RHSFunctionForBoundaryEdges(app, F, &amax_value, &crmax_value));
   PetscCall(AddSourceTerm(app, F));
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
+    sprintf(fname, "outputs/%s_dt_%f_%d_np%d_state.dat", app->output_prefix, app->dt, app->tstep - 1, app->comm_size);
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
 
@@ -1894,7 +1922,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscCall(VecView(natural, viewer));
     PetscCall(PetscViewerDestroy(&viewer));
 
-    sprintf(fname, "outputs/ex2b_flux_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->tstep - 1, app->comm_size);
+    sprintf(fname, "outputs/%s_dt_%f_%d_np%d_flux.dat", app->output_prefix, app->dt, app->tstep - 1, app->comm_size);
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
     PetscCall(DMPlexGlobalToNaturalBegin(app->dm, F, natural));
     PetscCall(DMPlexGlobalToNaturalEnd(app->dm, F, natural));
@@ -1904,7 +1932,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
     PetscCall(VecDestroy(&natural));
   }
 
-  PetscPrintf(PETSC_COMM_SELF, "Time Step = %d, rank = %d, Courant Number = %f\n", 1, app->rank, amax_value * app->dt * 2);
+  PetscPrintf(PETSC_COMM_SELF, "Time Step = %d, rank = %d, Courant Number = %f\n", app->tstep - 1, app->rank, crmax_value);
 
   PetscFunctionReturn(0);
 }
@@ -1955,7 +1983,7 @@ int main(int argc, char **argv) {
 
   {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_IC_np%d.dat", app->Nx, app->Ny, app->dt, app->comm_size);
+    sprintf(fname, "outputs/%s_dt_%f_IC_np%d.dat", app->output_prefix, app->dt, app->comm_size);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
@@ -1995,7 +2023,7 @@ int main(int argc, char **argv) {
 
   if (app->save) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/ex2b_Nx_%d_Ny_%d_dt_%f_%d_np%d.dat", app->Nx, app->Ny, app->dt, app->Nt, app->comm_size);
+    sprintf(fname, "outputs/final_solution.dat");
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
