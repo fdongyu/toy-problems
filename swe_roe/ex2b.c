@@ -52,6 +52,12 @@ typedef enum {
   CELL_QUAD_TYPE      // hexahedron cell for a 3D cell
 } RDyCellType;
 
+typedef enum {
+  PRESCRIBED_HEAD=0, // Prescribed head with zero velocity
+  CRITICAL_OUTFLOW,  // Critical outflow condition
+  REFLECTING_WALL    // Reflecting wall
+} RDyBoundaryEdgeType;
+
 /// A struct of arrays storing information about mesh cells. The ith element in
 /// each array stores a property for mesh cell i.
 typedef struct {
@@ -422,6 +428,8 @@ typedef struct {
   PetscInt *internal_edge_ids;
   /// local IDs of boundary edges
   PetscInt *boundary_edge_ids;
+  /// type of boundary edge
+  RDyBoundaryEdgeType *boundary_edge_types;
 
   /// PETSC_TRUE if edge is shared by locally owned cells, OR
   /// if it is shared by a local cell c1 and non-local cell c2 such that
@@ -762,6 +770,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
   // allocate memory to save IDs of internal and boundary edges
   PetscCall(RDyAlloc(PetscInt, mesh->num_internal_edges, &edges->internal_edge_ids));
   PetscCall(RDyAlloc(PetscInt, mesh->num_boundary_edges, &edges->boundary_edge_ids));
+  PetscCall(RDyAlloc(RDyBoundaryEdgeType, mesh->num_boundary_edges, &edges->boundary_edge_types));
 
   // now save the IDs
   mesh->num_internal_edges = 0;
@@ -777,6 +786,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
       edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
     } else {
       edges->boundary_edge_ids[mesh->num_boundary_edges++] = iedge;
+      edges->boundary_edge_types[mesh->num_boundary_edges-1] = REFLECTING_WALL;
     }
   }
 
@@ -1759,14 +1769,20 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
 
-      if (cells->is_local[l] && b_ptr[l] == 0) {
-        hr_vec_bnd[ii] = hl_vec_bnd[ii];
+      switch (edges->boundary_edge_types[ii]) {
+        case REFLECTING_WALL:
+          hr_vec_bnd[ii] = hl_vec_bnd[ii];
 
-        PetscReal dum1 = Square(sn_vec_bnd[ii]) - Square(cn_vec_bnd[ii]);
-        PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
+          PetscReal dum1 = Square(sn_vec_bnd[ii]) - Square(cn_vec_bnd[ii]);
+          PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
 
-        ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
-        vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
+          ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
+          vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
+          break;
+
+        default:
+          SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER, "Unsupported boundary edge type");
+          break;
       }
     }
   }
