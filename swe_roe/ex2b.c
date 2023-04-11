@@ -1105,6 +1105,10 @@ struct _n_RDyApp {
   PetscBool debug, save, add_building;
   PetscBool interpolate;
 
+  char boundary_edge_type_file[PETSC_MAX_PATH_LEN];
+  PetscBool use_critical_flow_bc;
+  PetscBool use_prescribed_head_bc;
+
   /// mesh representing simulation domain
   RDyMesh mesh;
 };
@@ -1151,6 +1155,10 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsReal("-hd", "hd", "", app->hd, &app->hd, NULL));
     PetscCall(PetscOptionsReal("-dt", "dt", "", app->dt, &app->dt, NULL));
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", app->add_building, &app->add_building, NULL));
+    PetscCall(PetscOptionsBool("-use_critical_flow_bc", "Use critical flow BC", "", app->use_critical_flow_bc, &app->use_critical_flow_bc, NULL));
+    PetscCall(PetscOptionsBool("-use_prescribed_head_bc", "Use prescribed head BC", "", app->use_prescribed_head_bc, &app->use_prescribed_head_bc, NULL));
+    PetscCall(PetscOptionsString("-boundary_edge_type_file", "The boundary edge type file", "ex2.c", app->boundary_edge_type_file,
+                                 app->boundary_edge_type_file, PETSC_MAX_PATH_LEN, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", app->save, &app->save, NULL));
     PetscCall(PetscOptionsString("-mesh", "The mesh file", "ex2.c", app->mesh_file, app->mesh_file, PETSC_MAX_PATH_LEN, NULL));
@@ -1160,6 +1168,17 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsReal("-mannings_n", "mannings_n", "", app->mannings_n, &app->mannings_n, NULL));
   }
   PetscOptionsEnd();
+
+  if (app->use_critical_flow_bc && app->use_prescribed_head_bc) {
+    SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER, "Both -use_critical_flow_bc and -use_prescribed_head_bc can not be specified.");
+  }
+  if (app->use_critical_flow_bc || app->use_prescribed_head_bc) {
+    size_t len;
+    PetscStrlen(app->boundary_edge_type_file, &len);
+    if (!len) {
+      SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER, "The -use_critical_flow_bc or -use_prescribed_head_bc was specified but -boundary_edge_type_file was not.");
+    }
+  }
 
   assert(app->hu >= 0.);
   assert(app->hd >= 0.);
@@ -1439,6 +1458,79 @@ PetscErrorCode AddBuildings(RDyApp app) {
   PetscCall(PetscViewerBinaryOpen(PETSC_COMM_WORLD, "outputs/B.dat", FILE_MODE_WRITE, &viewer));
   PetscCall(VecView(app->B, viewer));
   PetscCall(PetscViewerDestroy(&viewer));
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief Reads a PETSc Vec in binary format specified via -boundary_edge_type_file and marks
+///        boundary edge type
+/// @param [in] app An application context
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode MarkBoundaryEdgeType(RDyApp app) {
+  PetscFunctionBeginUser;
+
+  RDyMesh  *mesh  = &app->mesh;
+  RDyEdges *edges = &mesh->edges;
+
+  PetscViewer viewer;
+  PetscCall(PetscViewerBinaryOpen(app->comm, app->boundary_edge_type_file, FILE_MODE_READ, &viewer));
+
+  Vec natural, global, local;
+
+  // Create Vecs
+  PetscCall(DMPlexCreateNaturalVector(app->auxdm, &natural));
+  PetscCall(DMPlexCreateNaturalVector(app->auxdm, &global));
+  PetscCall(DMCreateLocalVector(app->auxdm, &local));
+
+  // Load the 
+  PetscCall(VecLoad(natural, viewer));
+
+  // Scatter from natural-to-global order
+  PetscCall(DMPlexNaturalToGlobalBegin(app->auxdm, natural, global));
+  PetscCall(DMPlexNaturalToGlobalEnd(app->auxdm, natural, global));
+
+  // Scatter from global-to-local order
+  PetscCall(DMGlobalToLocalBegin(app->auxdm, global, INSERT_VALUES, local));
+  PetscCall(DMGlobalToLocalEnd(app->auxdm, global, INSERT_VALUES, local));
+
+  PetscScalar *local_ptr;
+  PetscCall(VecGetArray(local, &local_ptr));
+
+  for (PetscInt icell=0; icell<mesh->num_cells; icell++) {
+
+    // Is a boundary condition being applied on the cell?
+    if ( (PetscInt) local_ptr[icell] == PRESCRIBED_HEAD || (PetscInt) local_ptr[icell] == CRITICAL_OUTFLOW) {
+
+      PetscBool edge_found = PETSC_FALSE;
+
+      // Loop over all boundary edges to identify the corresponding edge
+      for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
+        PetscInt iedge      = edges->boundary_edge_ids[ii];
+        PetscInt cellOffset = edges->cell_offsets[iedge];
+        PetscInt l          = edges->cell_ids[cellOffset];
+
+        // Is this edge corresponding the to the icell-th cell?
+        if (l == icell) {
+          edge_found                     = PETSC_TRUE;
+          edges->boundary_edge_types[ii] = (PetscInt) local_ptr[icell];
+          break;
+        }
+      }
+
+      if (!edge_found) {
+        printf("Edge not found: local_ptr[%d] = %f\n",icell,local_ptr[icell]);
+        exit(0);
+      }
+    }
+  }
+
+  PetscCall(VecRestoreArray(local, &local_ptr));
+
+  // Clean up memory
+  PetscCall(PetscViewerDestroy(&viewer));
+  PetscCall(VecDestroy(&natural));
+  PetscCall(VecDestroy(&global));
+  PetscCall(VecDestroy(&local));
 
   PetscFunctionReturn(0);
 }
@@ -2017,6 +2109,10 @@ int main(int argc, char **argv) {
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   if (app->add_building) {
     PetscCall(AddBuildings(app));
+  }
+
+  if (app->use_critical_flow_bc || app->use_prescribed_head_bc) {
+    PetscCall(MarkBoundaryEdgeType(app));
   }
 
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
