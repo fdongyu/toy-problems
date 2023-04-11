@@ -1326,6 +1326,7 @@ static PetscErrorCode CreateAuxDM(RDyApp app) {
   DMPlexCreateGlobalToNaturalSF(app->auxdm, auxsec, sfMigration, &sfNatural);
   DMPlexSetGlobalToNaturalSF(app->auxdm, sfNatural);
   PetscSFDestroy(&sfNatural);
+  PetscCall(DMSetFromOptions(app->auxdm));
 
   PetscFunctionReturn(0);
 }
@@ -1478,11 +1479,11 @@ PetscErrorCode MarkBoundaryEdgeType(RDyApp app) {
   Vec natural, global, local;
 
   // Create Vecs
-  PetscCall(DMPlexCreateNaturalVector(app->auxdm, &natural));
-  PetscCall(DMPlexCreateNaturalVector(app->auxdm, &global));
+  PetscCall(DMCreateGlobalVector(app->auxdm, &natural));
+  PetscCall(DMCreateGlobalVector(app->auxdm, &global));
   PetscCall(DMCreateLocalVector(app->auxdm, &local));
 
-  // Load the 
+  // Load the data
   PetscCall(VecLoad(natural, viewer));
 
   // Scatter from natural-to-global order
@@ -1861,6 +1862,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
 
+      PetscReal uperp, q, velocity;
       switch (edges->boundary_edge_types[ii]) {
         case REFLECTING_WALL:
           hr_vec_bnd[ii] = hl_vec_bnd[ii];
@@ -1870,6 +1872,16 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
 
           ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
           vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
+          break;
+        case CRITICAL_OUTFLOW:
+          uperp = ul_vec_bnd[ii] * cn_vec_bnd[ii] + vl_vec_bnd[ii] * sn_vec_bnd[ii];
+          q = hl_vec_bnd[ii] * fabs(uperp);
+
+          hr_vec_bnd[ii] = PetscPowReal( Square(q)/GRAVITY, 1.0/3.0 );
+
+          velocity = PetscPowReal(GRAVITY * hr_vec_bnd[ii], 0.5);
+          ur_vec_bnd[ii] = velocity * cn_vec_bnd[ii];
+          vr_vec_bnd[ii] = velocity * sn_vec_bnd[ii];
           break;
 
         default:
