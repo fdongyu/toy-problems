@@ -53,9 +53,9 @@ typedef enum {
 } RDyCellType;
 
 typedef enum {
-  PRESCRIBED_HEAD=0, // Prescribed head with zero velocity
-  CRITICAL_OUTFLOW,  // Critical outflow condition
-  REFLECTING_WALL    // Reflecting wall
+  PRESCRIBED_HEAD = 0,  // Prescribed head with zero velocity
+  CRITICAL_OUTFLOW,     // Critical outflow condition
+  REFLECTING_WALL       // Reflecting wall
 } RDyBoundaryEdgeType;
 
 /// A struct of arrays storing information about mesh cells. The ith element in
@@ -785,8 +785,8 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     if (r >= 0 && l >= 0) {
       edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
     } else {
-      edges->boundary_edge_ids[mesh->num_boundary_edges++] = iedge;
-      edges->boundary_edge_types[mesh->num_boundary_edges-1] = REFLECTING_WALL;
+      edges->boundary_edge_ids[mesh->num_boundary_edges++]     = iedge;
+      edges->boundary_edge_types[mesh->num_boundary_edges - 1] = REFLECTING_WALL;
     }
   }
 
@@ -1105,7 +1105,7 @@ struct _n_RDyApp {
   PetscBool debug, save, add_building;
   PetscBool interpolate;
 
-  char boundary_edge_type_file[PETSC_MAX_PATH_LEN];
+  char      boundary_edge_type_file[PETSC_MAX_PATH_LEN];
   PetscBool use_critical_flow_bc;
   PetscBool use_prescribed_head_bc;
 
@@ -1156,7 +1156,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsReal("-dt", "dt", "", app->dt, &app->dt, NULL));
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", app->add_building, &app->add_building, NULL));
     PetscCall(PetscOptionsBool("-use_critical_flow_bc", "Use critical flow BC", "", app->use_critical_flow_bc, &app->use_critical_flow_bc, NULL));
-    PetscCall(PetscOptionsBool("-use_prescribed_head_bc", "Use prescribed head BC", "", app->use_prescribed_head_bc, &app->use_prescribed_head_bc, NULL));
+    PetscCall(
+        PetscOptionsBool("-use_prescribed_head_bc", "Use prescribed head BC", "", app->use_prescribed_head_bc, &app->use_prescribed_head_bc, NULL));
     PetscCall(PetscOptionsString("-boundary_edge_type_file", "The boundary edge type file", "ex2.c", app->boundary_edge_type_file,
                                  app->boundary_edge_type_file, PETSC_MAX_PATH_LEN, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
@@ -1176,7 +1177,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     size_t len;
     PetscStrlen(app->boundary_edge_type_file, &len);
     if (!len) {
-      SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER, "The -use_critical_flow_bc or -use_prescribed_head_bc was specified but -boundary_edge_type_file was not.");
+      SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER,
+              "The -use_critical_flow_bc or -use_prescribed_head_bc was specified but -boundary_edge_type_file was not.");
     }
   }
 
@@ -1497,11 +1499,9 @@ PetscErrorCode MarkBoundaryEdgeType(RDyApp app) {
   PetscScalar *local_ptr;
   PetscCall(VecGetArray(local, &local_ptr));
 
-  for (PetscInt icell=0; icell<mesh->num_cells; icell++) {
-
+  for (PetscInt icell = 0; icell < mesh->num_cells; icell++) {
     // Is a boundary condition being applied on the cell?
-    if ( (PetscInt) local_ptr[icell] == PRESCRIBED_HEAD || (PetscInt) local_ptr[icell] == CRITICAL_OUTFLOW) {
-
+    if ((PetscInt)local_ptr[icell] == PRESCRIBED_HEAD || (PetscInt)local_ptr[icell] == CRITICAL_OUTFLOW) {
       PetscBool edge_found = PETSC_FALSE;
 
       // Loop over all boundary edges to identify the corresponding edge
@@ -1513,13 +1513,13 @@ PetscErrorCode MarkBoundaryEdgeType(RDyApp app) {
         // Is this edge corresponding the to the icell-th cell?
         if (l == icell) {
           edge_found                     = PETSC_TRUE;
-          edges->boundary_edge_types[ii] = (PetscInt) local_ptr[icell];
+          edges->boundary_edge_types[ii] = (PetscInt)local_ptr[icell];
           break;
         }
       }
 
       if (!edge_found) {
-        printf("Edge not found: local_ptr[%d] = %f\n",icell,local_ptr[icell]);
+        printf("Edge not found: local_ptr[%d] = %f\n", icell, local_ptr[icell]);
         exit(0);
       }
     }
@@ -1875,11 +1875,11 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
           break;
         case CRITICAL_OUTFLOW:
           uperp = ul_vec_bnd[ii] * cn_vec_bnd[ii] + vl_vec_bnd[ii] * sn_vec_bnd[ii];
-          q = hl_vec_bnd[ii] * fabs(uperp);
+          q     = hl_vec_bnd[ii] * fabs(uperp);
 
-          hr_vec_bnd[ii] = PetscPowReal( Square(q)/GRAVITY, 1.0/3.0 );
+          hr_vec_bnd[ii] = PetscPowReal(Square(q) / GRAVITY, 1.0 / 3.0);
 
-          velocity = PetscPowReal(GRAVITY * hr_vec_bnd[ii], 0.5);
+          velocity       = PetscPowReal(GRAVITY * hr_vec_bnd[ii], 0.5);
           ur_vec_bnd[ii] = velocity * cn_vec_bnd[ii];
           vr_vec_bnd[ii] = velocity * sn_vec_bnd[ii];
           break;
