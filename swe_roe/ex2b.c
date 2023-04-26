@@ -1275,10 +1275,13 @@ static PetscErrorCode CreateDM(RDyApp app) {
 
   // Distrubte the DM
   DM dmDist;
-  PetscCall(DMPlexDistribute(app->dm, 1, NULL, &dmDist));
+  PetscSF sfMigration;
+  PetscCall(DMPlexDistribute(app->dm, 1, &sfMigration, &dmDist));
   if (dmDist) {
-    DMDestroy(&app->dm);
+    PetscCall(DMDestroy(&app->dm));
     app->dm = dmDist;
+    PetscCall(DMPlexSetMigrationSF(app->dm, sfMigration));
+    PetscCall(PetscSFDestroy(&sfMigration));
   }
 
   PetscCall(DMViewFromOptions(app->dm, NULL, "-dm_view"));
@@ -1322,6 +1325,7 @@ static PetscErrorCode CreateAuxDM(RDyApp app) {
   PetscCall(DMSetLocalSection(app->auxdm, auxsec));
   PetscCall(PetscSectionViewFromOptions(auxsec, NULL, "-aux_layout_view"));
   PetscCall(PetscSectionSetUp(auxsec));
+  PetscCall(PetscSectionDestroy(&auxsec));
 
   PetscSF sfMigration, sfNatural;
   DMPlexGetMigrationSF(app->dm, &sfMigration);
@@ -2168,6 +2172,7 @@ int main(int argc, char **argv) {
   PetscCall(VecDestroy(&app->localX));
   PetscCall(VecDestroy(&R));
   PetscCall(RDyMeshDestroy(app->mesh));
+  PetscCall(DMDestroy(&app->auxdm));
   PetscCall(DMDestroy(&app->dm));
   PetscCall(RDyFree(app));
 
