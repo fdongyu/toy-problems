@@ -52,6 +52,12 @@ typedef enum {
   CELL_QUAD_TYPE      // hexahedron cell for a 3D cell
 } RDyCellType;
 
+typedef enum {
+  PRESCRIBED_HEAD = 0,  // Prescribed head with zero velocity
+  CRITICAL_OUTFLOW,     // Critical outflow condition
+  REFLECTING_WALL       // Reflecting wall
+} RDyBoundaryEdgeType;
+
 /// A struct of arrays storing information about mesh cells. The ith element in
 /// each array stores a property for mesh cell i.
 typedef struct {
@@ -422,6 +428,8 @@ typedef struct {
   PetscInt *internal_edge_ids;
   /// local IDs of boundary edges
   PetscInt *boundary_edge_ids;
+  /// type of boundary edge
+  RDyBoundaryEdgeType *boundary_edge_types;
 
   /// PETSC_TRUE if edge is shared by locally owned cells, OR
   /// if it is shared by a local cell c1 and non-local cell c2 such that
@@ -762,6 +770,7 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
   // allocate memory to save IDs of internal and boundary edges
   PetscCall(RDyAlloc(PetscInt, mesh->num_internal_edges, &edges->internal_edge_ids));
   PetscCall(RDyAlloc(PetscInt, mesh->num_boundary_edges, &edges->boundary_edge_ids));
+  PetscCall(RDyAlloc(RDyBoundaryEdgeType, mesh->num_boundary_edges, &edges->boundary_edge_types));
 
   // now save the IDs
   mesh->num_internal_edges = 0;
@@ -776,7 +785,8 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     if (r >= 0 && l >= 0) {
       edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
     } else {
-      edges->boundary_edge_ids[mesh->num_boundary_edges++] = iedge;
+      edges->boundary_edge_ids[mesh->num_boundary_edges]     = iedge;
+      edges->boundary_edge_types[mesh->num_boundary_edges++] = REFLECTING_WALL;
     }
   }
 
@@ -1095,6 +1105,10 @@ struct _n_RDyApp {
   PetscBool debug, save, add_building;
   PetscBool interpolate;
 
+  char      boundary_edge_type_file[PETSC_MAX_PATH_LEN];
+  PetscBool use_critical_flow_bc;
+  PetscBool use_prescribed_head_bc;
+
   /// mesh representing simulation domain
   RDyMesh mesh;
 };
@@ -1141,6 +1155,11 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsReal("-hd", "hd", "", app->hd, &app->hd, NULL));
     PetscCall(PetscOptionsReal("-dt", "dt", "", app->dt, &app->dt, NULL));
     PetscCall(PetscOptionsBool("-b", "Add buildings", "", app->add_building, &app->add_building, NULL));
+    PetscCall(PetscOptionsBool("-use_critical_flow_bc", "Use critical flow BC", "", app->use_critical_flow_bc, &app->use_critical_flow_bc, NULL));
+    PetscCall(
+        PetscOptionsBool("-use_prescribed_head_bc", "Use prescribed head BC", "", app->use_prescribed_head_bc, &app->use_prescribed_head_bc, NULL));
+    PetscCall(PetscOptionsString("-boundary_edge_type_file", "The boundary edge type file", "ex2.c", app->boundary_edge_type_file,
+                                 app->boundary_edge_type_file, PETSC_MAX_PATH_LEN, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
     PetscCall(PetscOptionsBool("-save", "save outputs", "", app->save, &app->save, NULL));
     PetscCall(PetscOptionsString("-mesh", "The mesh file", "ex2.c", app->mesh_file, app->mesh_file, PETSC_MAX_PATH_LEN, NULL));
@@ -1150,6 +1169,18 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsReal("-mannings_n", "mannings_n", "", app->mannings_n, &app->mannings_n, NULL));
   }
   PetscOptionsEnd();
+
+  if (app->use_critical_flow_bc && app->use_prescribed_head_bc) {
+    SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER, "Both -use_critical_flow_bc and -use_prescribed_head_bc can not be specified.");
+  }
+  if (app->use_critical_flow_bc || app->use_prescribed_head_bc) {
+    size_t len;
+    PetscStrlen(app->boundary_edge_type_file, &len);
+    if (!len) {
+      SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER,
+              "The -use_critical_flow_bc or -use_prescribed_head_bc was specified but -boundary_edge_type_file was not.");
+    }
+  }
 
   assert(app->hu >= 0.);
   assert(app->hd >= 0.);
@@ -1243,11 +1274,14 @@ static PetscErrorCode CreateDM(RDyApp app) {
   PetscCall(DMSetUseNatural(app->dm, PETSC_TRUE));
 
   // Distrubte the DM
-  DM dmDist;
-  PetscCall(DMPlexDistribute(app->dm, 1, NULL, &dmDist));
+  DM      dmDist;
+  PetscSF sfMigration;
+  PetscCall(DMPlexDistribute(app->dm, 1, &sfMigration, &dmDist));
   if (dmDist) {
-    DMDestroy(&app->dm);
+    PetscCall(DMDestroy(&app->dm));
     app->dm = dmDist;
+    PetscCall(DMPlexSetMigrationSF(app->dm, sfMigration));
+    PetscCall(PetscSFDestroy(&sfMigration));
   }
 
   PetscCall(DMViewFromOptions(app->dm, NULL, "-dm_view"));
@@ -1291,12 +1325,14 @@ static PetscErrorCode CreateAuxDM(RDyApp app) {
   PetscCall(DMSetLocalSection(app->auxdm, auxsec));
   PetscCall(PetscSectionViewFromOptions(auxsec, NULL, "-aux_layout_view"));
   PetscCall(PetscSectionSetUp(auxsec));
+  PetscCall(PetscSectionDestroy(&auxsec));
 
   PetscSF sfMigration, sfNatural;
   DMPlexGetMigrationSF(app->dm, &sfMigration);
   DMPlexCreateGlobalToNaturalSF(app->auxdm, auxsec, sfMigration, &sfNatural);
   DMPlexSetGlobalToNaturalSF(app->auxdm, sfNatural);
   PetscSFDestroy(&sfNatural);
+  PetscCall(DMSetFromOptions(app->auxdm));
 
   PetscFunctionReturn(0);
 }
@@ -1429,6 +1465,77 @@ PetscErrorCode AddBuildings(RDyApp app) {
   PetscCall(PetscViewerBinaryOpen(PETSC_COMM_WORLD, "outputs/B.dat", FILE_MODE_WRITE, &viewer));
   PetscCall(VecView(app->B, viewer));
   PetscCall(PetscViewerDestroy(&viewer));
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief Reads a PETSc Vec in binary format specified via -boundary_edge_type_file and marks
+///        boundary edge type. It is assumed that all edges of a cell have the same boundary type.
+/// @param [in] app An application context
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode MarkBoundaryEdgeType(RDyApp app) {
+  PetscFunctionBeginUser;
+
+  RDyMesh  *mesh  = &app->mesh;
+  RDyEdges *edges = &mesh->edges;
+
+  PetscViewer viewer;
+  PetscCall(PetscViewerBinaryOpen(app->comm, app->boundary_edge_type_file, FILE_MODE_READ, &viewer));
+
+  Vec natural, global, local;
+
+  // Create Vecs
+  PetscCall(DMPlexCreateNaturalVector(app->auxdm, &natural));
+  PetscCall(DMCreateGlobalVector(app->auxdm, &global));
+  PetscCall(DMCreateLocalVector(app->auxdm, &local));
+
+  // Load the data
+  PetscCall(VecLoad(natural, viewer));
+
+  // Scatter from natural-to-global order
+  PetscCall(DMPlexNaturalToGlobalBegin(app->auxdm, natural, global));
+  PetscCall(DMPlexNaturalToGlobalEnd(app->auxdm, natural, global));
+
+  // Scatter from global-to-local order
+  PetscCall(DMGlobalToLocalBegin(app->auxdm, global, INSERT_VALUES, local));
+  PetscCall(DMGlobalToLocalEnd(app->auxdm, global, INSERT_VALUES, local));
+
+  PetscScalar *local_ptr;
+  PetscCall(VecGetArray(local, &local_ptr));
+
+  for (PetscInt icell = 0; icell < mesh->num_cells; icell++) {
+    // Is a boundary condition being applied on the cell?
+    if ((PetscInt)local_ptr[icell] == PRESCRIBED_HEAD || (PetscInt)local_ptr[icell] == CRITICAL_OUTFLOW) {
+      PetscBool edge_found = PETSC_FALSE;
+
+      // Loop over all boundary edges to identify the corresponding edge
+      for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
+        PetscInt iedge      = edges->boundary_edge_ids[ii];
+        PetscInt cellOffset = edges->cell_offsets[iedge];
+        PetscInt l          = edges->cell_ids[cellOffset];
+
+        // Is this edge corresponding the to the icell-th cell?
+        if (l == icell) {
+          edge_found                     = PETSC_TRUE;
+          edges->boundary_edge_types[ii] = (PetscInt)local_ptr[icell];
+          break;
+        }
+      }
+
+      if (!edge_found) {
+        printf("Edge not found: local_ptr[%d] = %f\n", icell, local_ptr[icell]);
+        exit(0);
+      }
+    }
+  }
+
+  PetscCall(VecRestoreArray(local, &local_ptr));
+
+  // Clean up memory
+  PetscCall(PetscViewerDestroy(&viewer));
+  PetscCall(VecDestroy(&natural));
+  PetscCall(VecDestroy(&global));
+  PetscCall(VecDestroy(&local));
 
   PetscFunctionReturn(0);
 }
@@ -1759,14 +1866,34 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     if (cells->is_local[l] && b_ptr[l] == 0) {
       // Perform computation for a boundary edge
 
-      if (cells->is_local[l] && b_ptr[l] == 0) {
-        hr_vec_bnd[ii] = hl_vec_bnd[ii];
+      PetscReal uperp, q, velocity;
+      switch (edges->boundary_edge_types[ii]) {
+        case REFLECTING_WALL:
+          hr_vec_bnd[ii] = hl_vec_bnd[ii];
 
-        PetscReal dum1 = Square(sn_vec_bnd[ii]) - Square(cn_vec_bnd[ii]);
-        PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
+          PetscReal dum1 = Square(sn_vec_bnd[ii]) - Square(cn_vec_bnd[ii]);
+          PetscReal dum2 = 2.0 * sn_vec_bnd[ii] * cn_vec_bnd[ii];
 
-        ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
-        vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
+          ur_vec_bnd[ii] = ul_vec_bnd[ii] * dum1 - vl_vec_bnd[ii] * dum2;
+          vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
+          break;
+        case CRITICAL_OUTFLOW:
+          // Note: The approach below is different from the one implement in OFM.
+          //       OFM uses absolute velocity (i.e. uprep = (ul_vec_bnd^2 + vl_vec_bnd^2)^0.5),
+          //       while here the velocity perpendicular to the edge is considered.
+          uperp = ul_vec_bnd[ii] * cn_vec_bnd[ii] + vl_vec_bnd[ii] * sn_vec_bnd[ii];
+          q     = hl_vec_bnd[ii] * fabs(uperp);
+
+          hr_vec_bnd[ii] = PetscPowReal(Square(q) / GRAVITY, 1.0 / 3.0);
+
+          velocity       = PetscPowReal(GRAVITY * hr_vec_bnd[ii], 0.5);
+          ur_vec_bnd[ii] = velocity * cn_vec_bnd[ii];
+          vr_vec_bnd[ii] = velocity * sn_vec_bnd[ii];
+          break;
+
+        default:
+          SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER, "Unsupported boundary edge type");
+          break;
       }
     }
   }
@@ -2003,6 +2130,10 @@ int main(int argc, char **argv) {
     PetscCall(AddBuildings(app));
   }
 
+  if (app->use_critical_flow_bc || app->use_prescribed_head_bc) {
+    PetscCall(MarkBoundaryEdgeType(app));
+  }
+
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  *
    *  Create timestepping solver context
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
@@ -2044,6 +2175,7 @@ int main(int argc, char **argv) {
   PetscCall(VecDestroy(&app->localX));
   PetscCall(VecDestroy(&R));
   PetscCall(RDyMeshDestroy(app->mesh));
+  PetscCall(DMDestroy(&app->auxdm));
   PetscCall(DMDestroy(&app->dm));
   PetscCall(RDyFree(app));
 
