@@ -37,4 +37,4 @@ jobs:
         make ex2b
         mpiexec -n 3 ./ex2b -dm_view -save -b  -hu 10.0 -hd 5.0 -save -dt 0.01 -ts_monitor -Nx 200 -Ny 200  -b -ts_max_time 0.1
         mpiexec -n 3 ./ex2b -mesh ../share/meshes/DamBreak_grid5x10.exo -initial_condition ../share/initial_conditions/DamBreak_grid5x10_wetdownstream.IC -dt 0.01 -ts_max_time 0.1
-
+        mpiexec -n 3 ./ex2b -mesh ../share/meshes/Turning_1000_1000_dhdx1_with_z.exo -initial_condition ../share/initial_conditions/IC_Turning_1000_1000_dhdx1_with_z.bin -dt 10 -Nt 10 -mannings_n 0.015 -use_critical_flow_bc -boundary_edge_type_file ../share/auxfiles/Turning_1000_1000_dhdx1_with_z_bc_edge_type_critical_outflow.bin
