@@ -1274,7 +1274,7 @@ static PetscErrorCode CreateDM(RDyApp app) {
   PetscCall(DMSetUseNatural(app->dm, PETSC_TRUE));
 
   // Distrubte the DM
-  DM dmDist;
+  DM      dmDist;
   PetscSF sfMigration;
   PetscCall(DMPlexDistribute(app->dm, 1, &sfMigration, &dmDist));
   if (dmDist) {
@@ -1485,7 +1485,7 @@ PetscErrorCode MarkBoundaryEdgeType(RDyApp app) {
   Vec natural, global, local;
 
   // Create Vecs
-  PetscCall(DMCreateGlobalVector(app->auxdm, &natural));
+  PetscCall(DMPlexCreateNaturalVector(app->auxdm, &natural));
   PetscCall(DMCreateGlobalVector(app->auxdm, &global));
   PetscCall(DMCreateLocalVector(app->auxdm, &local));
 
