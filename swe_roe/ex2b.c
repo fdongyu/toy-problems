@@ -785,8 +785,8 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     if (r >= 0 && l >= 0) {
       edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
     } else {
-      edges->boundary_edge_ids[mesh->num_boundary_edges++]     = iedge;
-      edges->boundary_edge_types[mesh->num_boundary_edges - 1] = REFLECTING_WALL;
+      edges->boundary_edge_ids[mesh->num_boundary_edges]     = iedge;
+      edges->boundary_edge_types[mesh->num_boundary_edges++] = REFLECTING_WALL;
     }
   }
 
@@ -1470,7 +1470,7 @@ PetscErrorCode AddBuildings(RDyApp app) {
 }
 
 /// @brief Reads a PETSc Vec in binary format specified via -boundary_edge_type_file and marks
-///        boundary edge type
+///        boundary edge type. It is assumed that all edges of a cell have the same boundary type.
 /// @param [in] app An application context
 /// @return 0 on success, or a non-zero error code on failure
 PetscErrorCode MarkBoundaryEdgeType(RDyApp app) {
@@ -1878,6 +1878,9 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
           vr_vec_bnd[ii] = -ul_vec_bnd[ii] * dum2 - vl_vec_bnd[ii] * dum1;
           break;
         case CRITICAL_OUTFLOW:
+          // Note: The approach below is different from the one implement in OFM.
+          //       OFM uses absolute velocity (i.e. uprep = (ul_vec_bnd^2 + vl_vec_bnd^2)^0.5),
+          //       while here the velocity perpendicular to the edge is considered.
           uperp = ul_vec_bnd[ii] * cn_vec_bnd[ii] + vl_vec_bnd[ii] * sn_vec_bnd[ii];
           q     = hl_vec_bnd[ii] * fabs(uperp);
 

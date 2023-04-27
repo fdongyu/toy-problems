@@ -3,7 +3,7 @@ function write_exodus_file_v2(filename, coordx, coordy, coordz, block, sidesets)
 % Number of vertices
 num_of_nodes = length(coordx);
 
-% Is the mesh 2D or 3D?
+% Are vertex 2D or 3D?
 if ~isempty(coordz)
     num_of_dim = 3;
 else
@@ -178,3 +178,4 @@ if ~isempty(coordz)
     coor_names(1,3) = 'z';
 end
 ncwrite(filename,'coor_names',coor_names);
+end
