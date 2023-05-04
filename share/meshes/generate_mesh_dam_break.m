@@ -1,9 +1,20 @@
+function generate_mesh_dam_break()
+
 clear;close all;clc;
 
 % Make adding the path of petsc in Matlab
 %addpath('YOUR_PATH_TO_PETSC/share/petsc/matlab/');
-addpath('/Users/xudo627/developments/petsc/share/petsc/matlab/');
-addpath('/Users/xudo627/donghui/CODE/dengwirda-inpoly-355c57c/');
+%addpath('/Users/xudo627/developments/petsc/share/petsc/matlab/');
+%addpath('/Users/xudo627/donghui/CODE/dengwirda-inpoly-355c57c/');
+
+if ~exist('inpoly')
+    error('Did not find the function inpoly() in your path. Please use addpath to add directory containing inpoly().')
+end
+
+if ~exist('PetscBinaryWrite')
+    error("Did not find the function PetscBinaryWrite() in your path. Please use addpath(<petsc-dir>/share/petsc/matlab).")
+end
+
 dx = 1; dy = 1; % dx = dy = 100, 10, 5, 2, 1
 
 % Define the lenght in x and y 
