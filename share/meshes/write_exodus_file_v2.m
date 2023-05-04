@@ -70,6 +70,12 @@ else
     num_side_sets = 0;
 end
 
+% If we did not find any names/strings to be written out, define the
+% len_string to be one to write out coordinate names
+if (len_string == 0)
+    len_string = 1;
+end
+
 dimid_len_string = netcdf.defDim(ncid_out,'len_string',len_string);
 
 
@@ -86,7 +92,9 @@ end
 varid = netcdf.defVar(ncid_out,'eb_prop1', 'int', dimid_num_elm_blk);
 netcdf.putAtt(ncid_out, varid, 'name', 'ID');
 
-netcdf.defVar(ncid_out,'eb_names','char',[dimid_len_string dimid_num_elm_blk]);
+if (blk_name_present)
+    netcdf.defVar(ncid_out,'eb_names','char',[dimid_len_string dimid_num_elm_blk]);
+end
 netcdf.defVar(ncid_out,'coor_names','char',[dimid_len_string dimid_num_dim]);
 
 for iblk = 1:nblk
