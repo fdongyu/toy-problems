@@ -1,4 +1,4 @@
-function write_exodus_file_v2(filename, coordx, coordy, coordz, block, sidesets)
+function write_exodus_file(filename, coordx, coordy, coordz, block, sidesets)
 
 % Number of vertices
 num_of_nodes = length(coordx);

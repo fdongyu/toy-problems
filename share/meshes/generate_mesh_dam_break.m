@@ -66,7 +66,7 @@ coordz = zeros(length(coordx),1);
 
 % Write the exodus file
 block(1).connect = connect1;
-write_exodus_file_v2(['DamBreak_grid' num2str(Ly/dy) 'x' num2str(Lx/dx) '_v2.exo'],coordx, coordy, coordz, block, []);
+write_exodus_file(['DamBreak_grid' num2str(Ly/dy) 'x' num2str(Lx/dx) '_v2.exo'],coordx, coordy, coordz, block, []);
 
 
 % Write the initial condition file
