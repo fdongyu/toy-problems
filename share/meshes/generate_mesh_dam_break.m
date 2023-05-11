@@ -135,7 +135,7 @@ coordz = zeros(length(coordx),1);
 
 % Write the exodus file
 block(1).connect = connect1;
-exo_fname = ['DamBreak_grid' num2str(Ly/dy) 'x' num2str(Lx/dx) '_v2.exo'];
+exo_fname = ['DamBreak_grid' num2str(Ly/dy) 'x' num2str(Lx/dx) '.exo'];
 disp(['Exodus file: ' exo_fname])
 write_exodus_file(exo_fname,coordx, coordy, coordz, block, []);
 
