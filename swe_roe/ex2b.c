@@ -1102,7 +1102,7 @@ struct _n_RDyApp {
   PetscInt  ndof;
   Vec       B, localB;
   Vec       localX;
-  PetscBool debug, save, add_building;
+  PetscBool debug, savet, savef, add_building;
   PetscBool interpolate;
 
   char      boundary_edge_type_file[PETSC_MAX_PATH_LEN];
@@ -1161,7 +1161,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     PetscCall(PetscOptionsString("-boundary_edge_type_file", "The boundary edge type file", "ex2.c", app->boundary_edge_type_file,
                                  app->boundary_edge_type_file, PETSC_MAX_PATH_LEN, NULL));
     PetscCall(PetscOptionsBool("-debug", "debug", "", app->debug, &app->debug, NULL));
-    PetscCall(PetscOptionsBool("-save", "save outputs", "", app->save, &app->save, NULL));
+    PetscCall(PetscOptionsBool("-savet", "save time series", "", app->savet, &app->savet, NULL));
+    PetscCall(PetscOptionsBool("-savef", "save final solution", "", app->savef, &app->savef, NULL));
     PetscCall(PetscOptionsString("-mesh", "The mesh file", "ex2.c", app->mesh_file, app->mesh_file, PETSC_MAX_PATH_LEN, NULL));
     PetscCall(PetscOptionsString("-initial_condition", "The initial condition file", "ex2.c", app->initial_condition_file,
                                  app->initial_condition_file, PETSC_MAX_PATH_LEN, NULL));
@@ -2036,7 +2037,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(RHSFunctionForBoundaryEdges(app, F, &amax_value, &crmax_value));
   PetscCall(AddSourceTerm(app, F));
 
-  if (app->save) {
+  if (app->savet) {
     char fname[PETSC_MAX_PATH_LEN];
     sprintf(fname, "outputs/%s_dt_%f_%d_np%d_state.dat", app->output_prefix, app->dt, app->tstep - 1, app->comm_size);
     PetscViewer viewer;
@@ -2152,9 +2153,9 @@ int main(int argc, char **argv) {
   PetscCall(TSSetFromOptions(ts));
   PetscCall(TSSolve(ts, X));
 
-  if (app->save) {
+  if (app->savef) {
     char fname[PETSC_MAX_PATH_LEN];
-    sprintf(fname, "outputs/final_solution.dat");
+    sprintf(fname, "outputs/%s_dt_%f_final_solution.dat", app->output_prefix, app->dt);
 
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
