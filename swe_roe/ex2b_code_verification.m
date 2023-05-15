@@ -1,6 +1,8 @@
 clear;close all;clc;
 
-addpath('/Users/xudo627/developments/petsc/share/petsc/matlab/');
+if ~exist('PetscBinaryWrite')
+    error("Did not find the function PetscBinaryWrite() in your path. Please use addpath(<petsc-dir>/share/petsc/matlab).")
+end
 
 prefix  = {'dambreak500x1000','dambreak250x500','dambreak100x200', ...
            'dambreak50x100','dambreak5x10'};
