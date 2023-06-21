@@ -1,6 +1,8 @@
-# Using Roe's Riemann solver for 2D Shallow Water Equations
+# 2D Shallow Water Equations
 
 Please install PETSc version v3.17.3 (Github hash [c5e9cb](https://github.com/petsc/petsc/commit/c5e9cb188e4dab0f70a8981c0ddfcef5a478e87f)) before running the example.
+
+ex1.c, ex1f.F90, ex2a.c, ex2b.c use Roe's approximate Reimann solver for the 2D Shallow Water Equations.
 
 ## 1. ex1.c
 ex1.c solves the followling equations for the Dam Break on a flat surface.
