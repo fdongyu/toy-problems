@@ -3,5 +3,7 @@ swe/ex1
 swe/*.dSYM/*
 swe/outputs/*
 swe/*.asv
+sd/ex2c
+sd/*.dSYM/*
 site
 *.vscode

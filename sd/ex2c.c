@@ -1068,6 +1068,8 @@ struct _n_RDyApp {
   char output_prefix[PETSC_MAX_PATH_LEN];
   /// filename storing initial condition for the simulation
   char initial_condition_file[PETSC_MAX_PATH_LEN];
+  ///
+  PetscInt output_path_max_len;
   /// PETSc grid
   DM dm;
   /// A DM for creating PETSc Vecs with 1 DOF
@@ -1143,6 +1145,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
 
   MPI_Comm_size(app->comm, &app->comm_size);
   MPI_Comm_rank(app->comm, &app->rank);
+
+  app->output_path_max_len = PETSC_MAX_PATH_LEN * 2;
 
   PetscOptionsBegin(app->comm, NULL, "2D Mesh Options", "");
   {
@@ -2038,7 +2042,7 @@ PetscErrorCode RHSFunction(TS ts, PetscReal t, Vec X, Vec F, void *ptr) {
   PetscCall(AddSourceTerm(app, F));
 
   if (app->savet) {
-    char fname[PETSC_MAX_PATH_LEN];
+    char fname[app->output_path_max_len];
     sprintf(fname, "outputs/%s_dt_%f_%d_np%d_state.dat", app->output_prefix, app->dt, app->tstep - 1, app->comm_size);
     PetscViewer viewer;
     PetscCall(PetscViewerBinaryOpen(app->comm, fname, FILE_MODE_WRITE, &viewer));
@@ -2110,7 +2114,7 @@ int main(int argc, char **argv) {
   }
 
   {
-    char fname[PETSC_MAX_PATH_LEN];
+    char fname[app->output_path_max_len];
     sprintf(fname, "outputs/%s_dt_%f_IC_np%d.dat", app->output_prefix, app->dt, app->comm_size);
 
     PetscViewer viewer;
@@ -2154,7 +2158,7 @@ int main(int argc, char **argv) {
   PetscCall(TSSolve(ts, X));
 
   if (app->savef) {
-    char fname[PETSC_MAX_PATH_LEN];
+    char fname[app->output_path_max_len];
     sprintf(fname, "outputs/%s_dt_%f_final_solution.dat", app->output_prefix, app->dt);
 
     PetscViewer viewer;
