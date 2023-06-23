@@ -3,6 +3,7 @@ site_name: "Toy problems for RDycore"
 nav:
   - 'index.md'
   - 'shallow_water_equation.md'
+  - 'hairsine_rose_equation.md'
 
 edit_uri: ""
 
