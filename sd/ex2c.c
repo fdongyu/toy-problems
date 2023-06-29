@@ -1702,8 +1702,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
 static PetscErrorCode CreateDM(RDyApp app) {
   PetscFunctionBegin;
 
-  RDySed   *sed = &app->sed;
-  PetscInt nsed = sed->nsed;
+  /// TODO: Read from input file
+  PetscInt nsed = 10;
   size_t len;
 
   PetscStrlen(app->mesh_file, &len);
@@ -2112,7 +2112,7 @@ PetscErrorCode solver(PetscInt N, PetscInt ndof, const PetscReal hl[N], const Pe
 
     PetscReal cihat[ndof-3];
     PetscReal dch[ndof-3];
-    for (PetscInt j; j < ndof-3; j++) {
+    for (PetscInt j = 0; j < ndof-3; j++) {
       cihat[j] = (duml*Cil[n][j] + dumr*Cir[n][j])/(duml + dumr);
       dch[j]   = Cir[n][j]*hr[n] - Cil[n][j]*hl[n];
     }
@@ -2121,7 +2121,7 @@ PetscErrorCode solver(PetscInt N, PetscInt ndof, const PetscReal hl[N], const Pe
     dW[0] = 0.5 * (dh - hhat * duperp / chat);
     dW[1] = hhat * dupar;
     dW[2] = 0.5 * (dh + hhat * duperp / chat);
-    for (PetscInt j; j < ndof-3; j++) {
+    for (PetscInt j = 0; j < ndof-3; j++) {
       dW[j+3] = dch[j] - cihat[j]*dh;
     }
 
@@ -2141,7 +2141,7 @@ PetscErrorCode solver(PetscInt N, PetscInt ndof, const PetscReal hl[N], const Pe
     R[2][0] = vhat - chat * sn[n];
     R[2][1] = cn[n];
     R[2][2] = vhat + chat * sn[n];
-    for (PetscInt j; j < ndof-3; j++) {
+    for (PetscInt j = 0; j < ndof-3; j++) {
       R[j+3][0]   = cihat[j];
       R[j+3][2]   = cihat[j];
       R[j+3][j+3] = 1.0;
@@ -2163,8 +2163,8 @@ PetscErrorCode solver(PetscInt N, PetscInt ndof, const PetscReal hl[N], const Pe
 
     // Compute interface flux
     PetscReal A[ndof][ndof];
-    for (PetscInt i = 0; i < 3; i++) {
-      for (PetscInt j = 0; j < 3; j++) {
+    for (PetscInt i = 0; i < ndof; i++) {
+      for (PetscInt j = 0; j < ndof; j++) {
         A[i][j] = 0.0;
       }
     }
