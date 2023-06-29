@@ -2734,6 +2734,8 @@ int main(int argc, char **argv) {
   if (app->sediflag) {
     PetscCall(PetscPrintf(PETSC_COMM_WORLD, "3. CreateSediment\n"));
     PetscCall(RDySedCreateFromDM(app->dm, &app->sed));
+    RDySed *sed = &app->sed;
+    app->ndof = app->ndof + sed->nsed;
   } else {
     PetscCall(PetscPrintf(PETSC_COMM_WORLD, "3. SkipSediment\n"));
   }
