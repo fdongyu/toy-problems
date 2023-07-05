@@ -1,4 +1,4 @@
-static char help[] = "Partial 2D dam break problem.\n";
+static char help[] = "2D coupled SWE and HR sediment problem.\n";
 
 #include <assert.h>
 #include <math.h>
@@ -263,6 +263,8 @@ PetscErrorCode RDyCellsDestroy(RDyCells cells) {
 typedef struct {
   /// local IDs of vertices in local numbering
   PetscInt *ids;
+  /// local boundary codes
+  PetscInt *bcs;
   /// global IDs of vertices in local numbering
   PetscInt *global_ids;
 
@@ -300,6 +302,8 @@ PetscErrorCode RDyVerticesCreate(PetscInt num_vertices, RDyVertices *vertices) {
   PetscInt edges_per_vertex = 4;
 
   PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->ids));
+  PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->bcs));
+  PetscCall(RDyFill(PetscInt, vertices->bcs, num_vertices, 0));
   PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->global_ids));
   PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->num_cells));
   PetscCall(RDyAlloc(PetscInt, num_vertices, &vertices->num_edges));
@@ -404,6 +408,7 @@ PetscErrorCode RDyVerticesDestroy(RDyVertices vertices) {
   PetscFunctionBegin;
 
   PetscCall(RDyFree(vertices.ids));
+  PetscCall(RDyFree(vertices.bcs));
   PetscCall(RDyFree(vertices.global_ids));
   PetscCall(RDyFree(vertices.is_local));
   PetscCall(RDyFree(vertices.num_cells));
@@ -422,6 +427,8 @@ PetscErrorCode RDyVerticesDestroy(RDyVertices vertices) {
 typedef struct {
   /// local IDs of edges in local numbering
   PetscInt *ids;
+  /// local boundary codes
+  PetscInt *bcs;
   /// global IDs of edges in local numbering
   PetscInt *global_ids;
   /// local IDs of internal edges
@@ -477,6 +484,8 @@ PetscErrorCode RDyEdgesCreate(PetscInt num_edges, RDyEdges *edges) {
   PetscInt cells_per_edge = 2;
 
   PetscCall(RDyAlloc(PetscInt, num_edges, &edges->ids));
+  PetscCall(RDyAlloc(PetscInt, num_edges, &edges->bcs));
+  PetscCall(RDyFill(PetscInt, edges->bcs, num_edges, 0));
   PetscCall(RDyAlloc(PetscInt, num_edges, &edges->global_ids));
   PetscCall(RDyAlloc(PetscInt, num_edges, &edges->num_cells));
   PetscCall(RDyAlloc(PetscInt, num_edges, &edges->vertex_ids));
@@ -577,6 +586,7 @@ PetscErrorCode RDyEdgesDestroy(RDyEdges edges) {
   PetscFunctionBegin;
 
   PetscCall(RDyFree(edges.ids));
+  PetscCall(RDyFree(edges.bcs));
   PetscCall(RDyFree(edges.global_ids));
   PetscCall(RDyFree(edges.is_local));
   PetscCall(RDyFree(edges.num_cells));
@@ -781,12 +791,19 @@ PetscErrorCode RDyComputeAdditionalEdgeAttributes(DM dm, RDyMesh *mesh) {
     PetscInt cellOffset = edges->cell_offsets[iedge];
     PetscInt l          = edges->cell_ids[cellOffset];
     PetscInt r          = edges->cell_ids[cellOffset + 1];
+    PetscInt v_offset   = iedge * 2;
+    PetscInt vid_1      = edges->vertex_ids[v_offset + 0];
+    PetscInt vid_2      = edges->vertex_ids[v_offset + 1];
 
     if (r >= 0 && l >= 0) {
       edges->internal_edge_ids[mesh->num_internal_edges++] = iedge;
     } else {
       edges->boundary_edge_ids[mesh->num_boundary_edges]     = iedge;
-      edges->boundary_edge_types[mesh->num_boundary_edges++] = REFLECTING_WALL;
+      if (vertices->bcs[vid_1] == 2 || vertices->bcs[vid_2] == 2) {
+        edges->boundary_edge_types[mesh->num_boundary_edges++] = CRITICAL_OUTFLOW;
+      } else {
+        edges->boundary_edge_types[mesh->num_boundary_edges++] = REFLECTING_WALL;
+      }
     }
   }
 
@@ -861,6 +878,33 @@ static PetscErrorCode ComputeXYSlopesForTriangle(PetscReal xyz0[3], PetscReal xy
   num    = (x2 - x0) * (z1 - z0) - (x1 - x0) * (z2 - z0);
   den    = (x2 - x0) * (y1 - y0) - (x1 - x0) * (y2 - y0);
   *dz_dy = num / den;
+
+  PetscFunctionReturn(0);
+}
+
+/// @brief find outlet boundary type 
+/// @param [inout] mesh A pointer to an RDyMesh mesh data.
+/// @return 0 on success, or a non-zero error code on failure
+PetscErrorCode RDyFindBoundaryTypes(RDyMesh *mesh) {
+  PetscFunctionBegin;
+
+  RDyVertices *vertices = &mesh->vertices;
+  PetscInt num_of_outlet_edges = 0;
+
+  ///Hard code boundary code, TODO: read from input file
+  for (PetscInt ivert = 0; ivert < mesh->num_vertices; ivert++) {
+    PetscReal x = vertices->points[ivert].X[0];
+    PetscReal y = vertices->points[ivert].X[1];
+    PetscReal z = vertices->points[ivert].X[2];
+    if (x == 0 || y == 0 || y == 1) {
+      vertices->bcs[ivert] = 1;
+    }
+    if (z == 10) {
+      vertices->bcs[ivert] = 2;
+    }
+  }
+
+  PetscCall(PetscPrintf(PETSC_COMM_SELF,"The number of outlet edges is %d\n",num_of_outlet_edges));
 
   PetscFunctionReturn(0);
 }
@@ -1020,6 +1064,7 @@ PetscErrorCode RDyMeshCreateFromDM(DM dm, RDyMesh *mesh) {
   PetscCall(RDyCellsCreateFromDM(dm, &mesh->cells));
   PetscCall(RDyEdgesCreateFromDM(dm, &mesh->edges));
   PetscCall(RDyVerticesCreateFromDM(dm, &mesh->vertices));
+  PetscCall(RDyFindBoundaryTypes(mesh));
   PetscCall(RDyComputeAdditionalEdgeAttributes(dm, mesh));
   PetscCall(RDyComputeAdditionalCellAttributes(mesh));
 
@@ -1103,6 +1148,7 @@ typedef struct {
 
   /// ARRAY AT CELL x CLASS LEVEL
   PetscReal *Mi;
+  PetscReal *Ci;
   PetscReal *Ei;
   PetscReal *Eri;
   PetscReal *Ri;
@@ -1157,6 +1203,9 @@ PetscErrorCode RDySedCreate(PetscInt num_cells, PetscInt nsed, RDySed *sed) {
 
   PetscCall(RDyAlloc(PetscReal, num_cells*nsed, &sed->Mi));
   PetscCall(RDyFill(PetscReal, sed->Mi, num_cells*nsed, 0.0));
+
+  PetscCall(RDyAlloc(PetscReal, num_cells*nsed, &sed->Ci));
+  PetscCall(RDyFill(PetscReal, sed->Ci, num_cells*nsed, 0.0));
 
   PetscCall(RDyAlloc(PetscReal, num_cells*nsed, &sed->Ei));
   PetscCall(RDyFill(PetscReal, sed->Ei, num_cells*nsed, 0.0));
@@ -1304,7 +1353,7 @@ PetscErrorCode computeSEDohm(PetscReal Omega, PetscReal Cd, PetscReal vmag) {
 /// @param Pr    precipitation rate
 /// @param Area  icell cell area
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode computeSEDsource(RDySed *sed, PetscInt icell, PetscReal Ci[], PetscReal h, PetscReal Pr, PetscReal Area) {
+PetscErrorCode computeSEDsource(RDySed *sed, PetscInt icell, PetscReal h, PetscReal Pr, PetscReal Area) {
   PetscFunctionBeginUser;
 
   PetscReal grav = 9.81;      ///gravity
@@ -1363,7 +1412,7 @@ PetscErrorCode computeSEDsource(RDySed *sed, PetscInt icell, PetscReal Ci[], Pet
       }
 
       /// deposition rate 
-      sed->Di[index] = sed->vset[j]*Ci[j]; //[m/s][kg/m3]=[kg/m2/s]
+      sed->Di[index] = sed->vset[j]*sed->Ci[index]; //[m/s][kg/m3]=[kg/m2/s]
     }
 
   } else {
@@ -1406,7 +1455,7 @@ PetscErrorCode computeSEDsource(RDySed *sed, PetscInt icell, PetscReal Ci[], Pet
       }
 
       /// deposition rate 
-      sed->Di[index] = sed->vset[j]*Ci[j]; //[m/s][kg/m3]=[kg/m2/s]
+      sed->Di[index] = sed->vset[j]*sed->Ci[index]; //[m/s][kg/m3]=[kg/m2/s]
     }
   }
 
@@ -1468,6 +1517,10 @@ struct _n_RDyApp {
   PetscReal mannings_n;
   /// IC opoition, ic_opt = 0: cold start; ic_opt = 1: dam break condition
   PetscInt  ic_opt;
+  /// Outlet discharge
+  PetscReal Qoutlet;
+  /// Discharge file
+  FILE      *fq;
 
   PetscInt  ndof;
   Vec       B, localB;
@@ -1493,7 +1546,7 @@ typedef struct _n_RDyApp *RDyApp;
 /// @param N   size of the array
 /// @param h   height of the cell
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode computeSEDmi(RDyApp app, PetscInt N, const PetscReal h[N]) {
+PetscErrorCode computeSEDMi(RDyApp app, PetscInt N, const PetscReal h[N]) {
   PetscFunctionBeginUser;
 
   RDyMesh  *mesh        = &app->mesh;
@@ -1508,7 +1561,7 @@ PetscErrorCode computeSEDmi(RDyApp app, PetscInt N, const PetscReal h[N]) {
   PetscReal delta_phi   = sed->delta_phi;
   PetscReal Fw;
   PetscReal zc[N];
-  PetscReal sCi[N*nsed]; // TODO: correctly assign sCi;
+  //PetscReal sCi[N*nsed]; // TODO: correctly assign sCi;
 
   if (sed->Dia[0] < 1.0) {
     for (PetscInt icell = 0; icell < mesh->num_cells; icell++) {
@@ -1584,7 +1637,7 @@ PetscErrorCode computeSEDmi(RDyApp app, PetscInt N, const PetscReal h[N]) {
           PetscInt index = icell*nsed+j;
           if (h[icell] > delta_phi) {
             PetscReal before = sed->Mi[index];
-            sed->Mi[index] += dt * (sed->vset[j] * sCi[index] - sed->Eri[index] - sed->Rri[index]);
+            sed->Mi[index] += dt * (sed->vset[j] * sed->Ci[index] - sed->Eri[index] - sed->Rri[index]);
             PetscReal after  = sed->Mi[index];
             if (sed->Mi[index] < 0.0) {
               PetscReal weight = fabs(before) / (fabs(before) + fabs(after));
@@ -1594,7 +1647,7 @@ PetscErrorCode computeSEDmi(RDyApp app, PetscInt N, const PetscReal h[N]) {
               sed->Mi[index]   = 0.0;
               zc[icell]       += (dt * (-sed->Ei[index] - sed->Ri[index]) - before) / rhos / (1- bedporosity); 
             } else {
-              zc[icell]       += dt / rhos / (1-bedporosity) * (sed->vset[j]*sCi[index] - sed->Eri[index] - sed->Rri[index] - sed->Ei[index] - sed->Ri[index]); 
+              zc[icell]       += dt / rhos / (1-bedporosity) * (sed->vset[j]*sed->Ci[index] - sed->Eri[index] - sed->Rri[index] - sed->Ei[index] - sed->Ri[index]); 
             }
           } else {
             sed->Mi[index]   = dt * sed->Ei[index];
@@ -1632,6 +1685,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   app->tiny_h     = 1e-7;
   app->ndof       = 3;
   app->mannings_n = 0.015;
+  app->Qoutlet    = 0.0;
 
   MPI_Comm_size(app->comm, &app->comm_size);
   MPI_Comm_rank(app->comm, &app->rank);
@@ -1692,6 +1746,14 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
 
   PetscReal max_time = app->Nt * app->dt;
   PetscPrintf(app->comm, "Max simulation time is %f\n", max_time);
+
+  char fname[app->output_path_max_len];
+  sprintf(fname, "outputs/%s_rank%d.Qoutlet", app->output_prefix, app->rank);
+
+  if (fopen(fname,"r")) {
+    remove(fname);
+  } 
+  app->fq = fopen(fname,"a");
 
   PetscFunctionReturn(0);
 }
@@ -2245,6 +2307,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
   RDyMesh  *mesh  = &app->mesh;
   RDyCells *cells = &mesh->cells;
   RDyEdges *edges = &mesh->edges;
+  RDySed   *sed   = &app->sed;
 
   // Get pointers to vector data
   PetscScalar *x_ptr, *f_ptr, *b_ptr;
@@ -2275,6 +2338,14 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
     hur_vec_int[ii] = x_ptr[r * ndof + 1];
     hvr_vec_int[ii] = x_ptr[r * ndof + 2];
 
+    for (PetscInt jj = 0; jj < sed->nsed; jj++) {
+      PetscInt index = l * sed->nsed + jj;
+      Cil_vec_int[ii][jj] = sed->Ci[index];
+
+      index = r * sed->nsed + jj;
+      Cir_vec_int[ii][jj] = sed->Ci[index];
+    }
+    /*
     if (hl_vec_int[ii] > app->tiny_h) {
       for (PetscInt jj = 0; jj < ndof-3; jj++) {
         Cil_vec_int[ii][jj] = fmax(x_ptr[l *ndof + 3 + jj]/hl_vec_int[ii],0.0);
@@ -2293,7 +2364,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
       for (PetscInt jj = 0; jj < ndof-3; jj++) {
         Cir_vec_int[ii][jj] = 0.0;
       }
-    }
+    }*/
     
   }
 
@@ -2508,6 +2579,11 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
   PetscCall(solver(num, ndof, hl_vec_bnd, hr_vec_bnd, ul_vec_bnd, ur_vec_bnd, vl_vec_bnd, vr_vec_bnd, 
             Cil_vec_bnd, Cir_vec_bnd, sn_vec_bnd, cn_vec_bnd, flux_vec_bnd, amax_vec_bnd));
 
+  PetscInt qstep = (PetscInt) 60.0/app->dt;
+
+  if ((app->tstep - 1) % qstep == 0) {
+    app->Qoutlet = 0.0;
+  }
   // Save the flux values in the Vec based by TS
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
     PetscInt  iedge      = edges->boundary_edge_ids[ii];
@@ -2528,8 +2604,15 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
         for (PetscInt idof = 0; idof < ndof; idof++) {
           f_ptr[l * ndof + idof] -= flux_vec_bnd[ii][idof] * edgeLen / areal;
         }
+
+        if (edges->boundary_edge_types[ii] == CRITICAL_OUTFLOW) {
+          app->Qoutlet += flux_vec_bnd[ii][0] * edgeLen;
+        }
       }
     }
+  }
+  if ((app->tstep - 1) % qstep == 0) {
+    fprintf(app->fq,"%f\t%f\n",(app->tstep-1)*app->dt,app->Qoutlet);
   }
 
   // Restore vectors
@@ -2561,7 +2644,6 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
 
   PetscInt  num = mesh->num_cells;
   PetscReal h_vec[num], hu_vec[num], hv_vec[num], u_vec[num], v_vec[num];
-  PetscReal Ci[sed->nsed];
 
   // Collect the h/hu/hv for cells to compute u/v
   for (PetscInt icell = 0; icell < mesh->num_cells; icell++) {
@@ -2593,17 +2675,8 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
 
       PetscReal tbx = 0.0, tby = 0.0, ohm = 0.0;
 
-      if (h < app->tiny_h) {
-        for (PetscInt j = 0; j < sed->nsed; j++) {
-          Ci[j] = 0.0;
-        }
-      } else {
-        for (PetscInt j = 0; j < sed->nsed; j++) {
-          Ci[j] = x_ptr[icell * ndof + 3 + j];
-        }
-      }
-     
-      PetscReal Pr = 100.0/1000.0*cells->areas[icell];
+      ///PetscReal Pr = 100.0/1000.0*cells->areas[icell]/3600;
+      PetscReal Pr = 100.0/1000.0/3600.0;
 
       if (h >= app->tiny_h) {
         // Cd = g n^2 h^{-1/3}, where n is Manning's coefficient
@@ -2620,7 +2693,7 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
         tby = (hv + dt * Fsum_y - dt * bedy) * factor;
 
         PetscCall(computeSEDohm(ohm,Cd,velocity));
-        PetscCall(computeSEDsource(sed,icell,Ci,h,Pr,cells->areas[icell]));
+        PetscCall(computeSEDsource(sed,icell,h,Pr,cells->areas[icell]));
       }
 
       sed->Omega[icell] = ohm;
@@ -2630,8 +2703,14 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
       f_ptr[icell * ndof + 2] += -bedy - tby;
 
       ///TODO: add correct source term for sediment
-      for (PetscInt j = 0; j < nsed; j++) {
-        f_ptr[icell * ndof + 3 + j] += 0.0;
+      if (sed->Dia[0] < 1.0) {
+        for (PetscInt j = 0; j < nsed; j++) {
+          f_ptr[icell * ndof + 3 + j] += 0.0;
+        }
+      } else {
+        for (PetscInt j = 0; j < nsed; j++) {
+          f_ptr[icell * ndof + 3 + j] += 0.0;
+        }
       }
 
     }
@@ -2823,6 +2902,7 @@ int main(int argc, char **argv) {
   if (app->sediflag) {
     PetscCall(RDySedDestroy(app->sed));
   }
+  fclose(app->fq);
   PetscCall(DMDestroy(&app->auxdm));
   PetscCall(DMDestroy(&app->dm));
   PetscCall(RDyFree(app));
