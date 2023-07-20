@@ -1775,6 +1775,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   app->fs = fopen(fname,"a");
 
   PetscCall(RDyAlloc(PetscReal, sed->nsed+1, &app->Soutlet));
+  PetscCall(RDyFill(PetscReal, app->Soutlet, sed->nsed+1, 0.0));
 
   PetscFunctionReturn(0);
 }
@@ -3005,6 +3006,7 @@ int main(int argc, char **argv) {
   fclose(app->fs);
   PetscCall(DMDestroy(&app->auxdm));
   PetscCall(DMDestroy(&app->dm));
+  PetscCall(RDyFree(app->Soutlet));
   PetscCall(RDyFree(app));
 
   PetscCall(PetscFinalize());
