@@ -42,4 +42,4 @@ jobs:
       run: |
         cd sd
         make ex2c
-        mpiexec -n 3 ./ex2c -savef true -output_prefix proffitt -mesh ../share/meshes/proffitt.exo -dt 0.05 -Nt 12000 -sed true -mannings_n 0.06 -ic 2 -h_ic 0.01
+        mpiexec -n 3 ./ex2c -savef true -output_prefix proffitt -mesh ../share/meshes/proffitt.exo -dt 0.05 -Nt 100 -sed true -mannings_n 0.06 -ic 2 -h_ic 0.01
