@@ -3006,7 +3006,7 @@ int main(int argc, char **argv) {
   fclose(app->fs);
   PetscCall(DMDestroy(&app->auxdm));
   PetscCall(DMDestroy(&app->dm));
-  PetscCall(RDyFree(app->Soutlet));
+  //PetscCall(RDyFree(app->Soutlet));
   PetscCall(RDyFree(app));
 
   PetscCall(PetscFinalize());
