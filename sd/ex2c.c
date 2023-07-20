@@ -1169,7 +1169,7 @@ typedef struct {
 /// @param [out] sed A pointer to an RDySed that stores allocated data.
 ///
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode RDySedCreate(PetscInt num_cells, PetscInt nsed, RDySed *sed) {
+PetscErrorCode RDySedAllocateMemory(PetscInt num_cells, PetscInt nsed, RDySed *sed) {
   PetscFunctionBegin;
 
   PetscCall(RDyAlloc(PetscReal, num_cells, &sed->a0));
@@ -1232,12 +1232,12 @@ PetscErrorCode RDySedCreate(PetscInt num_cells, PetscInt nsed, RDySed *sed) {
   PetscFunctionReturn(0);
 }
 
-/// Creates a fully initialized RDySed struct from a given DM.
+/// Creates a fully initialized RDySed struct
 /// @param [in] dm A DM that provides cell data
 /// @param [out] sed A pointer to an RDySed that stores allocated data.
 ///
 /// @return 0 on success, or a non-zero error code on failure
-PetscErrorCode RDySedCreateFromDM(DM dm, RDySed *sed) {
+PetscErrorCode RDySedCreate(DM dm, RDySed *sed) {
   PetscFunctionBegin;
 
   PetscInt cStart, cEnd;
@@ -1257,7 +1257,7 @@ PetscErrorCode RDySedCreateFromDM(DM dm, RDySed *sed) {
   sed->delta_phi   = 1e-10;
 
   // allocate cell storage
-  PetscCall(RDySedCreate(cEnd - cStart, sed->nsed, sed));
+  PetscCall(RDySedAllocateMemory(cEnd - cStart, sed->nsed, sed));
 
   for (PetscInt c = cStart; c < cEnd; c++) {
     PetscInt  icell = c - cStart;
@@ -1525,7 +1525,7 @@ struct _n_RDyApp {
   /// Flow discharge file
   FILE      *fq;
   /// Sediment discharge at outlet
-  PetscReal Soutlet[11];
+  PetscReal *Soutlet;
   /// Sediment discharge file
   FILE      *fs;
 
@@ -1637,7 +1637,7 @@ PetscErrorCode computeSEDMi(RDyApp app, PetscInt icell, const PetscReal h) {
         PetscReal before = sed->Mi[index];
         //sed->Di[index]   = sed->vset[j] * sed->Ci[index];
         sed->Mi[index]  += dt * (sed->Di[index] - sed->Eri[index] - sed->Rri[index]);
-        PetscReal after  = sed->Mi[index];
+        //PetscReal after  = sed->Mi[index];
         if (sed->Mi[index] < 0.0) {
           /* comment out to compare against tRIBS-FEaST for Proffitt example
           PetscReal weight = fabs(before) / (fabs(before) + fabs(after));
@@ -1693,6 +1693,7 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   app->ndof       = 3;
   app->mannings_n = 0.015;
   app->Qoutlet    = 0.0;
+  RDySed   *sed   = &app->sed;
   //app->Soutlet    = 0.0;
 
   MPI_Comm_size(app->comm, &app->comm_size);
@@ -1772,6 +1773,8 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     remove(fname);
   } 
   app->fs = fopen(fname,"a");
+
+  PetscCall(RDyAlloc(PetscReal, sed->nsed+1, &app->Soutlet));
 
   PetscFunctionReturn(0);
 }
@@ -2324,6 +2327,32 @@ static PetscErrorCode GetVelocityFromMomentum(PetscInt N, PetscReal tiny_h, cons
   PetscFunctionReturn(0);
 }
 
+/// @brief Computes sediment consentration in based on mass
+/// @param N Size of the array
+/// @param nsed Number of sediment classes
+/// @param tiny_h Threshold value for height
+/// @param h Height
+/// @param hci Mass
+/// @param ci Concentration
+/// @return 0 on success, or a non-zero error code on failure
+static PetscErrorCode GetCiFromMass(PetscInt N, PetscInt nsed, PetscReal tiny_h, const PetscReal h[N], const PetscReal hci[N][nsed], PetscReal ci[N][nsed]) {
+  PetscFunctionBeginUser;
+
+  for (PetscInt n = 0; n < N; n++) {
+    if (h[n] < tiny_h) {
+      for (PetscInt j = 0; j < nsed; j++) {
+        ci[n][j] = 0.0;
+      }
+    } else {
+      for (PetscInt j = 0; j < nsed; j++) {
+       ci[n][j] = fmax(hci[n][j] / h[n],0.0); 
+      }
+    }
+  }
+
+  PetscFunctionReturn(0);
+}
+
 /// @brief It computes RHSFunction for internal edges
 /// @param [inout] app A RDyApp struct
 /// @param [inout] F A global flux Vec
@@ -2347,6 +2376,7 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
   PetscInt  num  = mesh->num_internal_edges;
   PetscReal hl_vec_int[num], hul_vec_int[num], hvl_vec_int[num], ul_vec_int[num], vl_vec_int[num];
   PetscReal hr_vec_int[num], hur_vec_int[num], hvr_vec_int[num], ur_vec_int[num], vr_vec_int[num];
+  PetscReal hCil_vec_int[num][ndof-3], hCir_vec_int[num][ndof-3];
   PetscReal Cil_vec_int[num][ndof-3], Cir_vec_int[num][ndof-3];
   PetscReal sn_vec_int[num], cn_vec_int[num];
   PetscReal flux_vec_int[num][ndof], amax_vec_int[num];
@@ -2366,34 +2396,9 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
     hur_vec_int[ii] = x_ptr[r * ndof + 1];
     hvr_vec_int[ii] = x_ptr[r * ndof + 2];
 
-    /*
-    for (PetscInt jj = 0; jj < sed->nsed; jj++) {
-      PetscInt index = l * sed->nsed + jj;
-      Cil_vec_int[ii][jj] = sed->Ci[index];
-
-      index = r * sed->nsed + jj;
-      Cir_vec_int[ii][jj] = sed->Ci[index];
-    }
-    */
-
-    if (hl_vec_int[ii] > app->tiny_h) {
-      for (PetscInt jj = 0; jj < ndof-3; jj++) {
-        Cil_vec_int[ii][jj] = fmax(x_ptr[l *ndof + 3 + jj]/hl_vec_int[ii],0.0);
-      }
-    } else {
-      for (PetscInt jj = 0; jj < ndof-3; jj++) {
-        Cil_vec_int[ii][jj] = 0.0;
-      }
-    }
-
-    if (hr_vec_int[ii] > app->tiny_h) {
-      for (PetscInt jj = 0; jj < ndof-3; jj++) {
-        Cir_vec_int[ii][jj] = fmax(x_ptr[r *ndof + 3 + jj]/hr_vec_int[ii],0.0);
-      }
-    } else {
-      for (PetscInt jj = 0; jj < ndof-3; jj++) {
-        Cir_vec_int[ii][jj] = 0.0;
-      }
+    for (PetscInt jj = 0; jj < ndof - 3; jj++) {
+      hCil_vec_int[ii][jj] = x_ptr[l * ndof + 3 + jj];
+      hCir_vec_int[ii][jj] = x_ptr[r * ndof + 3 + jj];
     }
     
   }
@@ -2401,6 +2406,9 @@ PetscErrorCode RHSFunctionForInternalEdges(RDyApp app, Vec F, PetscReal *amax_va
   // Compute u/v for left and right cells
   PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hl_vec_int, hul_vec_int, hvl_vec_int, ul_vec_int, vl_vec_int));
   PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hr_vec_int, hur_vec_int, hvr_vec_int, ur_vec_int, vr_vec_int));
+  // Compute Ci from left and right cells
+  PetscCall(GetCiFromMass(num,ndof-3,app->tiny_h,hl_vec_int,hCil_vec_int,Cil_vec_int));
+  PetscCall(GetCiFromMass(num,ndof-3,app->tiny_h,hr_vec_int,hCir_vec_int,Cir_vec_int));
 
   // Update u/v for reflective internal edges
   for (PetscInt ii = 0; ii < mesh->num_internal_edges; ii++) {
@@ -2525,7 +2533,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
   PetscInt  num  = mesh->num_boundary_edges;
   PetscReal hl_vec_bnd[num], hul_vec_bnd[num], hvl_vec_bnd[num], ul_vec_bnd[num], vl_vec_bnd[num];
   PetscReal hr_vec_bnd[num], ur_vec_bnd[num], vr_vec_bnd[num];
-  PetscReal Cil_vec_bnd[num][ndof-3], Cir_vec_bnd[num][ndof-3];
+  PetscReal hCil_vec_bnd[num][ndof-3], Cil_vec_bnd[num][ndof-3], Cir_vec_bnd[num][ndof-3];
   PetscReal sn_vec_bnd[num], cn_vec_bnd[num];
   PetscReal flux_vec_bnd[num][ndof], amax_vec_bnd[num];
 
@@ -2539,27 +2547,16 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     hul_vec_bnd[ii] = x_ptr[l * ndof + 1];
     hvl_vec_bnd[ii] = x_ptr[l * ndof + 2];
 
-    /*
-    for (PetscInt jj = 0; jj < sed->nsed; jj++) {
-      PetscInt index = l * sed->nsed + jj;
-      Cil_vec_bnd[ii][jj] = sed->Ci[index];
-    }
-    */
-
-    if (hl_vec_bnd[ii] > app->tiny_h) {
-      for (PetscInt jj = 0; jj < ndof-3; jj++) {
-        Cil_vec_bnd[ii][jj] = fmax(x_ptr[l * ndof + 3 + jj]/hl_vec_bnd[ii],0.0);
-      }
-    } else {
-      for (PetscInt jj = 0; jj < ndof-3; jj++) {
-        Cil_vec_bnd[ii][jj] = 0.0;
-      }
+    for (PetscInt jj = 0; jj < ndof - 3; jj++) {
+      hCil_vec_bnd[ii][jj] = x_ptr[l * ndof + 3 + jj];
     }
 
   }
 
   // Compute u/v for left cells
   PetscCall(GetVelocityFromMomentum(num, app->tiny_h, hl_vec_bnd, hul_vec_bnd, hvl_vec_bnd, ul_vec_bnd, vl_vec_bnd));
+  // Compute Ci for left cells
+  PetscCall(GetCiFromMass(num,ndof-3,app->tiny_h, hl_vec_bnd, hCil_vec_bnd, Cil_vec_bnd));
 
   // Compute h/u/v for right cells
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
@@ -2666,9 +2663,11 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
   }
   if ((app->tstep - 1) % qstep == 0) {
     fprintf(app->fq,"%f\t%f\n",(app->tstep-1)*app->dt,app->Qoutlet);
-    fprintf(app->fs,"%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\n",(app->tstep-1)*app->dt,app->Soutlet[0],
-            app->Soutlet[1],app->Soutlet[2],app->Soutlet[3],app->Soutlet[4],app->Soutlet[5],app->Soutlet[6],
-            app->Soutlet[7],app->Soutlet[8],app->Soutlet[9],app->Soutlet[10]);
+    fprintf(app->fs,"%f\t",(app->tstep-1)*app->dt);
+    for (PetscInt j = 0; j < sed->nsed; j++) {
+      fprintf(app->fs,"%f\t",app->Soutlet[j]);
+    }
+    fprintf(app->fs,"%f\n",app->Soutlet[sed->nsed]);
   }
 
   // Restore vectors
@@ -2761,7 +2760,8 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
         for (PetscInt j = 0; j < sed->nsed; j++) {
           PetscInt index = icell*nsed+j;
           Di[j] = (x_ptr[icell * ndof + 3 + j] + dt*f_ptr[icell * ndof + 3 + j] + dt*(sed->Ei[index] + sed->Eri[index] + sed->Ri[index] + sed->Rri[index]))*sed->vset[j]/(h+dt*sed->vset[j]);
-          //Di[j] = sed->vset[j] * sed->Ci[index];
+          /*
+          For debug purpose
           if (icell == 0 && j == 0) {
             printf("icell=%d,j=%d,ch[j] = %f,h=%f\n", icell,j,x_ptr[icell * ndof + 3 + j],h);
             printf("Ei=%f,Eri=%f,Ri=%f,Rri=%f, Di=%f\n",sed->Ei[index],sed->Eri[index],sed->Ri[index],sed->Rri[index],sed->vset[j]*sed->Ci[index]);
@@ -2770,6 +2770,7 @@ PetscErrorCode AddSourceTerm(RDyApp app, Vec F) {
             printf("factor=%f\n",sed->vset[j]/(h+dt*sed->vset[j]));
             ///SETERRQ(PETSC_COMM_WORLD, PETSC_ERR_USER, "debug sediment.");
           }
+          */
         }
 
       } else { 
@@ -2910,7 +2911,7 @@ int main(int argc, char **argv) {
    * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
   if (app->sediflag) {
     PetscCall(PetscPrintf(PETSC_COMM_WORLD, "3. CreateSediment\n"));
-    PetscCall(RDySedCreateFromDM(app->dm, &app->sed));
+    PetscCall(RDySedCreate(app->dm, &app->sed));
     RDySed *sed = &app->sed;
     app->ndof = app->ndof + sed->nsed;
   } else {
