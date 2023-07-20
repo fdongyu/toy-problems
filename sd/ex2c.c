@@ -890,7 +890,6 @@ PetscErrorCode RDyFindBoundaryTypes(RDyMesh *mesh) {
   PetscFunctionBegin;
 
   RDyVertices *vertices = &mesh->vertices;
-  PetscInt num_of_outlet_edges = 0;
 
   ///Hard code boundary code, TODO: read from input file
   for (PetscInt ivert = 0; ivert < mesh->num_vertices; ivert++) {
@@ -904,8 +903,6 @@ PetscErrorCode RDyFindBoundaryTypes(RDyMesh *mesh) {
       vertices->bcs[ivert] = 2;
     }
   }
-
-  PetscCall(PetscPrintf(PETSC_COMM_SELF,"The number of outlet edges is %d\n",num_of_outlet_edges));
 
   PetscFunctionReturn(0);
 }
@@ -1161,6 +1158,9 @@ typedef struct {
   PetscReal *Omega;
   /// ARRAY AT CLASS LEVEL
 
+  /// Sediment discharge at outlet
+  PetscReal *Soutlet;
+
 } RDySed;
 
 /// Allocates and initializes an RDySed struct.
@@ -1228,6 +1228,9 @@ PetscErrorCode RDySedAllocateMemory(PetscInt num_cells, PetscInt nsed, RDySed *s
 
   PetscCall(RDyAlloc(PetscReal, num_cells, &sed->Omega));
   PetscCall(RDyFill(PetscReal, sed->Omega, num_cells, 0.0));
+
+  PetscCall(RDyAlloc(PetscReal, nsed+1, &sed->Soutlet));
+  PetscCall(RDyFill(PetscReal, sed->Soutlet, nsed+1, 0.0));
 
   PetscFunctionReturn(0);
 }
@@ -1327,6 +1330,7 @@ PetscErrorCode RDySedDestroy(RDySed sed) {
   PetscCall(RDyFree(sed.Di));
   PetscCall(RDyFree(sed.Ct));
   PetscCall(RDyFree(sed.Omega));
+  PetscCall(RDyFree(sed.Soutlet));
 
   PetscFunctionReturn(0);
 }
@@ -1524,8 +1528,6 @@ struct _n_RDyApp {
   PetscReal Qoutlet;
   /// Flow discharge file
   FILE      *fq;
-  /// Sediment discharge at outlet
-  PetscReal *Soutlet;
   /// Sediment discharge file
   FILE      *fs;
 
@@ -1693,8 +1695,6 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
   app->ndof       = 3;
   app->mannings_n = 0.015;
   app->Qoutlet    = 0.0;
-  RDySed   *sed   = &app->sed;
-  //app->Soutlet    = 0.0;
 
   MPI_Comm_size(app->comm, &app->comm_size);
   MPI_Comm_rank(app->comm, &app->rank);
@@ -1773,9 +1773,6 @@ static PetscErrorCode ProcessOptions(MPI_Comm comm, RDyApp app) {
     remove(fname);
   } 
   app->fs = fopen(fname,"a");
-
-  PetscCall(RDyAlloc(PetscReal, sed->nsed+1, &app->Soutlet));
-  PetscCall(RDyFill(PetscReal, app->Soutlet, sed->nsed+1, 0.0));
 
   PetscFunctionReturn(0);
 }
@@ -2629,7 +2626,7 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
 
   app->Qoutlet = 0.0;
   for (PetscInt j = 0; j < sed->nsed+1; j++) {
-    app->Soutlet[j] = 0.0;
+    sed->Soutlet[j] = 0.0;
   }
   // Save the flux values in the Vec based by TS
   for (PetscInt ii = 0; ii < mesh->num_boundary_edges; ii++) {
@@ -2655,8 +2652,8 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
         if (edges->boundary_edge_types[ii] == CRITICAL_OUTFLOW || edges->boundary_edge_types[ii] == SOFT_BOUNDARY) {
           app->Qoutlet += flux_vec_bnd[ii][0] * edgeLen;
           for (PetscInt j = 0; j < sed->nsed; j++) {
-            app->Soutlet[j]         += flux_vec_bnd[ii][j+3] * edgeLen;
-            app->Soutlet[sed->nsed] += flux_vec_bnd[ii][j+3] * edgeLen;
+            sed->Soutlet[j]         += flux_vec_bnd[ii][j+3] * edgeLen;
+            sed->Soutlet[sed->nsed] += flux_vec_bnd[ii][j+3] * edgeLen;
           }
         }
       }
@@ -2666,9 +2663,9 @@ PetscErrorCode RHSFunctionForBoundaryEdges(RDyApp app, Vec F, PetscReal *amax_va
     fprintf(app->fq,"%f\t%f\n",(app->tstep-1)*app->dt,app->Qoutlet);
     fprintf(app->fs,"%f\t",(app->tstep-1)*app->dt);
     for (PetscInt j = 0; j < sed->nsed; j++) {
-      fprintf(app->fs,"%f\t",app->Soutlet[j]);
+      fprintf(app->fs,"%f\t",sed->Soutlet[j]);
     }
-    fprintf(app->fs,"%f\n",app->Soutlet[sed->nsed]);
+    fprintf(app->fs,"%f\n",sed->Soutlet[sed->nsed]);
   }
 
   // Restore vectors
@@ -3006,7 +3003,6 @@ int main(int argc, char **argv) {
   fclose(app->fs);
   PetscCall(DMDestroy(&app->auxdm));
   PetscCall(DMDestroy(&app->dm));
-  //PetscCall(RDyFree(app->Soutlet));
   PetscCall(RDyFree(app));
 
   PetscCall(PetscFinalize());
